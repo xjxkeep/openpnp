@@ -51,7 +51,7 @@ import org.openpnp.machine.reference.axis.ReferenceVirtualAxis;
 import org.openpnp.machine.reference.camera.GstreamerCamera;
 import org.openpnp.machine.reference.camera.ImageCamera;
 import org.openpnp.machine.reference.camera.MjpgCaptureCamera;
-import org.openpnp.machine.reference.camera.OnvifIPCamera;
+// import org.openpnp.machine.reference.camera.OnvifIPCamera;
 import org.openpnp.machine.reference.camera.OpenCvCamera;
 import org.openpnp.machine.reference.camera.OpenPnpCaptureCamera;
 import org.openpnp.machine.reference.camera.SimulatedUpCamera;
@@ -462,7 +462,7 @@ public class ReferenceMachine extends AbstractMachine {
         l.add(Neoden4Camera.class);
         l.add(Neoden4SwitcherCamera.class);
         l.add(Webcams.class);
-        l.add(OnvifIPCamera.class);
+        // l.add(OnvifIPCamera.class);
         l.add(ImageCamera.class);
         l.add(SwitcherCamera.class);
         l.add(SimulatedUpCamera.class);

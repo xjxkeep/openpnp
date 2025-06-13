@@ -174,7 +174,8 @@ public class Main {
                 try {
                     MainFrame frame = new MainFrame(configuration);
                     frame.setVisible(true);
-                    Logger.info(String.format("Bienvenue, Bienvenido, Willkommen, Hello, Namaskar, Welkom, Bonjour to OpenPnP version %s.", Main.getVersion()));
+                    Logger.info("hello world from xjx with fast compile");
+                    Logger.info(String.format("xjx with auto compile, Bonjour to OpenPnP version %s.", Main.getVersion()));
                     configuration.getScripting().on("Startup", null);
                 }
                 catch (Exception e) {
