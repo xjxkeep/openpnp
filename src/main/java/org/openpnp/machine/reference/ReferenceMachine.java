@@ -77,6 +77,7 @@ import org.openpnp.machine.reference.feeder.ReferenceTrayFeeder;
 import org.openpnp.machine.reference.feeder.ReferenceTubeFeeder;
 import org.openpnp.machine.reference.feeder.SchultzFeeder;
 import org.openpnp.machine.reference.feeder.SlotSchultzFeeder;
+import org.openpnp.machine.reference.feeder.VisionCapFeeder;
 import org.openpnp.machine.reference.psh.ActuatorsPropertySheetHolder;
 import org.openpnp.machine.reference.psh.AxesPropertySheetHolder;
 import org.openpnp.machine.reference.psh.CamerasPropertySheetHolder;
@@ -208,6 +209,7 @@ public class ReferenceMachine extends AbstractMachine {
                              }
                          }
                      });
+
     }
 
     @Override
@@ -450,6 +452,7 @@ public class ReferenceMachine extends AbstractMachine {
         l.add(Neoden4Feeder.class);
         l.add(PhotonFeeder.class);
         l.add(BambooFeederAutoVision.class);
+        l.add(VisionCapFeeder.class);
         l.addAll(registeredFeederClasses);
         return l;
     }
