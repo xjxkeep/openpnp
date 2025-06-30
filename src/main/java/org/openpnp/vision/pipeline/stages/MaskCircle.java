@@ -1,6 +1,7 @@
 package org.openpnp.vision.pipeline.stages;
 
 import java.awt.Color;
+import java.util.List;
 
 import org.opencv.core.Core;
 import org.opencv.core.Mat;
@@ -27,6 +28,11 @@ public class MaskCircle extends CvStage {
     @Property(description = "Name of the property through which OpenPnP controls this stage. Use \"MaskCircle\" for standard control.")
     private String propertyName = "MaskCircle";
 
+
+    @Attribute(required = false)
+    @Property(description = "Name of the stage that provides circle information for masking. If specified, the circle from this stage will be used instead of the fixed diameter.")
+    private String circleToMask = "CircleToMask";
+
     public int getDiameter() {
         return diameter;
     }
@@ -41,6 +47,14 @@ public class MaskCircle extends CvStage {
 
     public void setPropertyName(String propertyName) {
         this.propertyName = propertyName;
+    }
+
+    public String getCircleToMask() {
+        return circleToMask;
+    }
+
+    public void setCircleToMask(String circleToMask) {
+        this.circleToMask = circleToMask;
     }
 
     @Commit
@@ -60,11 +74,17 @@ public class MaskCircle extends CvStage {
         Scalar color = FluentCv.colorToScalar(Color.black);
         mask.setTo(color);
         masked.setTo(color);
-
-        //Check for overriding properties
-        int diameter = this.diameter;
-        Point center = new Point(mat.cols()*0.5, mat.rows()*0.5);
-        
+        Point center= new Point(mat.cols()*0.5, mat.rows()*0.5);;
+        int diameter= this.diameter;
+        Result detectCircularSymmetryResult = pipeline.getExpectedResult(circleToMask);
+        if (detectCircularSymmetryResult!=null) {
+            List<Result.Circle> circles = detectCircularSymmetryResult.getExpectedModel(List.class);
+            if (circles.size() > 0) {
+                Result.Circle circle = circles.get(0);
+                diameter = (int) circle.getDiameter();
+                center = new Point(circle.getX(), circle.getY());
+            }
+        }
         diameter = getPossiblePipelinePropertyOverride(diameter, pipeline, propertyName+".diameter", 
                 Double.class, Integer.class, Length.class);
         
