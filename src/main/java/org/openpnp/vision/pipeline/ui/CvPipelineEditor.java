@@ -84,6 +84,7 @@ import org.openpnp.vision.pipeline.stages.SizeCheck;
 import org.openpnp.vision.pipeline.stages.Threshold;
 import org.openpnp.vision.pipeline.stages.ThresholdAdaptive;
 import org.openpnp.vision.pipeline.stages.WritePartTemplateImage;
+import org.openpnp.vision.pipeline.stages.MorphologyEx;
 import org.pmw.tinylog.Logger;
 
 /**
@@ -170,6 +171,7 @@ public class CvPipelineEditor extends JPanel {
         registerStageClass(Threshold.class);
         registerStageClass(ThresholdAdaptive.class);
         registerStageClass(WritePartTemplateImage.class);
+        registerStageClass(MorphologyEx.class);
         registerStageClass(ActuatorWrite.class);
         registerStageClass(AffineWarp.class);
         registerStageClass(AffineUnwarp.class);
