@@ -126,17 +126,17 @@ build_installer() {
         echo "构建Linux安装程序..."
         
         # 创建安装程序目录
-        mkdir -p installers
+        mkdir -p build/installers
         
         # 构建安装程序 - 针对Linux优化
         install4jc -r "$VERSION" \
-                   -d installers \
+                   -d build/installers \
                    -D mediaFileVersion="$VERSION" \
                    -D linuxDistro="$DISTRO" \
                    OpenPnP.install4j
         
         echo "✓ Linux安装程序构建完成"
-        echo "安装程序位置: installers/"
+        echo "安装程序位置: build/installers/"
     else
         echo "跳过安装程序构建 (install4jc 不可用)"
     fi
@@ -145,8 +145,11 @@ build_installer() {
 # 创建便携式版本
 create_portable() {
     echo "创建Linux便携式版本..."
+    rm -rf build
+    # 创建build目录
+    mkdir -p build
     
-    PORTABLE_DIR="OpenPnP-Portable-$VERSION"
+    PORTABLE_DIR="build/OpenPnP-Portable-$VERSION"
     mkdir -p "$PORTABLE_DIR"
     
     # 复制应用程序文件
@@ -161,8 +164,24 @@ create_portable() {
 #!/bin/bash
 cd "$(dirname "$0")"
 
+# 检测操作系统
+platform='unknown'
+unamestr=`uname`
+case "$unamestr" in
+    Linux)
+        platform='linux'
+    ;;
+    Darwin)
+        platform='mac'
+    ;;
+esac
+
 # 设置Java选项
-export JAVA_OPTS="--add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.desktop/java.awt=ALL-UNNAMED --add-opens=java.desktop/java.awt.color=ALL-UNNAMED"
+if [[ "$platform" == "mac" ]]; then
+    export JAVA_OPTS="-Xdock:name=OpenPnP --add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.desktop/java.awt=ALL-UNNAMED --add-opens=java.desktop/java.awt.color=ALL-UNNAMED --add-opens=java.desktop/com.apple.eawt=ALL-UNNAMED"
+else
+    export JAVA_OPTS="--add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.desktop/java.awt=ALL-UNNAMED --add-opens=java.desktop/java.awt.color=ALL-UNNAMED"
+fi
 
 # 检查Java版本
 java_version=$(java -version 2>&1 | head -n 1 | cut -d'"' -f2 | cut -d'.' -f1)
@@ -237,11 +256,11 @@ create_archive() {
     echo "创建Linux压缩包..."
     
     # 创建tar.gz压缩包 (Linux标准)
-    tar -czf "OpenPnP-Linux-$VERSION.tar.gz" "OpenPnP-Portable-$VERSION"
+    tar -czf "build/OpenPnP-Linux-$VERSION.tar.gz" "build/OpenPnP-Portable-$VERSION"
     
     # 创建zip压缩包 (跨平台兼容)
     if command -v zip &> /dev/null; then
-        zip -r "OpenPnP-Linux-$VERSION.zip" "OpenPnP-Portable-$VERSION"
+        zip -r "build/OpenPnP-Linux-$VERSION.zip" "build/OpenPnP-Portable-$VERSION"
     fi
     
     echo "✓ Linux压缩包创建完成"
@@ -277,26 +296,26 @@ show_results() {
     echo ""
     echo "生成的文件:"
     
-    if [ -d "installers" ]; then
-        echo "- 安装程序: installers/"
-        ls -la installers/
+    if [ -d "build/installers" ]; then
+        echo "- 安装程序: build/installers/"
+        ls -la build/installers/
     fi
     
-    if [ -d "OpenPnP-Portable-$VERSION" ]; then
-        echo "- 便携式版本: OpenPnP-Portable-$VERSION/"
+    if [ -d "build/OpenPnP-Portable-$VERSION" ]; then
+        echo "- 便携式版本: build/OpenPnP-Portable-$VERSION/"
     fi
     
-    if [ -f "OpenPnP-Linux-$VERSION.tar.gz" ]; then
-        echo "- Linux压缩包: OpenPnP-Linux-$VERSION.tar.gz"
+    if [ -f "build/OpenPnP-Linux-$VERSION.tar.gz" ]; then
+        echo "- Linux压缩包: build/OpenPnP-Linux-$VERSION.tar.gz"
     fi
     
-    if [ -f "OpenPnP-Linux-$VERSION.zip" ]; then
-        echo "- 跨平台ZIP包: OpenPnP-Linux-$VERSION.zip"
+    if [ -f "build/OpenPnP-Linux-$VERSION.zip" ]; then
+        echo "- 跨平台ZIP包: build/OpenPnP-Linux-$VERSION.zip"
     fi
     
     echo ""
     echo "Linux使用方法:"
-    echo "1. 解压: tar -xzf OpenPnP-Linux-$VERSION.tar.gz"
+    echo "1. 解压: tar -xzf build/OpenPnP-Linux-$VERSION.tar.gz"
     echo "2. 运行: cd OpenPnP-Portable-$VERSION && ./start.sh"
     echo "3. 创建桌面快捷方式: ./install-desktop.sh"
     echo "4. 卸载: ./uninstall.sh"

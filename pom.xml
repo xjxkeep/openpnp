@@ -446,11 +446,9 @@
 					<repositoryLayout>flat</repositoryLayout>
 					<useWildcardClassPath>true</useWildcardClassPath>
 					<extraJvmArguments>
-						-Xdock:name=OpenPnP
 						--add-opens=java.base/java.lang=ALL-UNNAMED
 						--add-opens=java.desktop/java.awt=ALL-UNNAMED
 						--add-opens=java.desktop/java.awt.color=ALL-UNNAMED
-						--add-opens=java.desktop/com.apple.eawt=ALL-UNNAMED
 					</extraJvmArguments>
 					<outputDirectory>target/appassembler</outputDirectory>
 				</configuration>

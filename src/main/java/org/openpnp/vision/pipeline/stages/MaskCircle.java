@@ -76,8 +76,10 @@ public class MaskCircle extends CvStage {
         masked.setTo(color);
         Point center= new Point(mat.cols()*0.5, mat.rows()*0.5);;
         int diameter= this.diameter;
-        Result detectCircularSymmetryResult = pipeline.getExpectedResult(circleToMask);
-        if (detectCircularSymmetryResult!=null) {
+        Result detectCircularSymmetryResult = null;
+        try {
+            detectCircularSymmetryResult = pipeline.getExpectedResult(circleToMask);
+             if (detectCircularSymmetryResult!=null) {
             List<Result.Circle> circles = detectCircularSymmetryResult.getExpectedModel(List.class);
             if (circles.size() > 0) {
                 Result.Circle circle = circles.get(0);
@@ -85,6 +87,10 @@ public class MaskCircle extends CvStage {
                 center = new Point(circle.getX(), circle.getY());
             }
         }
+        } catch (Exception e) {
+            // 如果找不到 circleToMask stage，忽略异常并继续使用默认值
+        }
+       
         diameter = getPossiblePipelinePropertyOverride(diameter, pipeline, propertyName+".diameter", 
                 Double.class, Integer.class, Length.class);
         

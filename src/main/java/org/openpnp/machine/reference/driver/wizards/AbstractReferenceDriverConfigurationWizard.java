@@ -194,6 +194,7 @@ public class AbstractReferenceDriverConfigurationWizard extends AbstractConfigur
         panelSerial.add(lblPortName, "2, 2, right, default");
 
         comboBoxPort = new JComboBox();
+        comboBoxPort.setEditable(true);
         panelSerial.add(comboBoxPort, "4, 2, fill, default");
 
         JLabel lblBaudRate = new JLabel(Translations.getString(
