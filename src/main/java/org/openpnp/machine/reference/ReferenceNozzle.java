@@ -117,6 +117,12 @@ public class ReferenceNozzle extends AbstractNozzle implements HeadMountable {
     @Attribute(required = false)
     private boolean limitRotation = true;
 
+    @Attribute(required = false)
+    private double placeOffsetX = 0.0;
+
+    @Attribute(required = false)
+    private double placeOffsetY = 0.0;
+
     private Actuator vacuumSenseActuator;
     private Actuator vacuumActuator;
     private Actuator blowOffActuator;
@@ -391,6 +397,13 @@ public class ReferenceNozzle extends AbstractNozzle implements HeadMountable {
             placementLocation = placementLocation
                     .add(new Location(part.getHeight().getUnits(), 0, 0, part.getHeight().getValue(), 0));
         }
+        
+        // Apply placement offsets for static calibration
+        if (placeOffsetX != 0.0 || placeOffsetY != 0.0) {
+            placementLocation = placementLocation.add(new Location(placementLocation.getUnits(), 
+                    placeOffsetX, placeOffsetY, 0, 0));
+        }
+        
         MovableUtils.moveToLocationAtSafeZ(this, placementLocation);
     }
 
@@ -1041,6 +1054,26 @@ public class ReferenceNozzle extends AbstractNozzle implements HeadMountable {
 
     public void setBlowOffClosingValve(boolean blowOffClosingValve) {
         this.blowOffClosingValve = blowOffClosingValve;
+    }
+
+    public double getPlaceOffsetX() {
+        return placeOffsetX;
+    }
+
+    public void setPlaceOffsetX(double placeOffsetX) {
+        Object oldValue = this.placeOffsetX;
+        this.placeOffsetX = placeOffsetX;
+        firePropertyChange("placeOffsetX", oldValue, placeOffsetX);
+    }
+
+    public double getPlaceOffsetY() {
+        return placeOffsetY;
+    }
+
+    public void setPlaceOffsetY(double placeOffsetY) {
+        Object oldValue = this.placeOffsetY;
+        this.placeOffsetY = placeOffsetY;
+        firePropertyChange("placeOffsetY", oldValue, placeOffsetY);
     }
 
     protected void actuateVacuumValve(boolean on) throws Exception {

@@ -82,6 +82,10 @@ public class ReferenceNozzleConfigurationWizard extends AbstractConfigurationWiz
     private JComboBox rotationMode;
     private JLabel lblAlignWithPart;
     private JCheckBox aligningRotationMode;
+    private JLabel lblPlaceOffsetX;
+    private JTextField placeOffsetXTf;
+    private JLabel lblPlaceOffsetY;
+    private JTextField placeOffsetYTf;
 
     public ReferenceNozzleConfigurationWizard(AbstractMachine machine, ReferenceNozzle nozzle) {
         this.nozzle = nozzle;
@@ -124,6 +128,10 @@ public class ReferenceNozzleConfigurationWizard extends AbstractConfigurationWiz
                 FormSpecs.RELATED_GAP_COLSPEC,
                 FormSpecs.DEFAULT_COLSPEC,},
             new RowSpec[] {
+                FormSpecs.RELATED_GAP_ROWSPEC,
+                FormSpecs.DEFAULT_ROWSPEC,
+                FormSpecs.RELATED_GAP_ROWSPEC,
+                FormSpecs.DEFAULT_ROWSPEC,
                 FormSpecs.RELATED_GAP_ROWSPEC,
                 FormSpecs.DEFAULT_ROWSPEC,
                 FormSpecs.RELATED_GAP_ROWSPEC,
@@ -201,6 +209,22 @@ public class ReferenceNozzleConfigurationWizard extends AbstractConfigurationWiz
         
         aligningRotationMode = new JCheckBox("");
         panelOffsets.add(aligningRotationMode, "8, 10");
+
+        lblPlaceOffsetX = new JLabel(Translations.getString(
+                "ReferenceNozzleConfigurationWizard.OffsetsPanel.PlaceOffsetXLabel.text")); //$NON-NLS-1$
+        panelOffsets.add(lblPlaceOffsetX, "2, 12, right, default");
+        
+        placeOffsetXTf = new JTextField();
+        panelOffsets.add(placeOffsetXTf, "4, 12, fill, default");
+        placeOffsetXTf.setColumns(10);
+        
+        lblPlaceOffsetY = new JLabel(Translations.getString(
+                "ReferenceNozzleConfigurationWizard.OffsetsPanel.PlaceOffsetYLabel.text")); //$NON-NLS-1$
+        panelOffsets.add(lblPlaceOffsetY, "6, 12, right, default");
+        
+        placeOffsetYTf = new JTextField();
+        panelOffsets.add(placeOffsetYTf, "8, 12, fill, default");
+        placeOffsetYTf.setColumns(10);
 
         JPanel panelSafeZ = new JPanel();
         panelSafeZ.setBorder(new TitledBorder(null, Translations.getString(
@@ -315,6 +339,8 @@ public class ReferenceNozzleConfigurationWizard extends AbstractConfigurationWiz
         addWrappedBinding(nozzle, "safeZ", textFieldSafeZ, "text", lengthConverter);
         addWrappedBinding(nozzle, "pickDwellMilliseconds", pickDwellTf, "text", intConverter);
         addWrappedBinding(nozzle, "placeDwellMilliseconds", placeDwellTf, "text", intConverter);
+        addWrappedBinding(nozzle, "placeOffsetX", placeOffsetXTf, "text", doubleConverter);
+        addWrappedBinding(nozzle, "placeOffsetY", placeOffsetYTf, "text", doubleConverter);
 
         ComponentDecorators.decorateWithAutoSelect(nameTf);
         ComponentDecorators.decorateWithAutoSelect(pickDwellTf);
@@ -324,5 +350,7 @@ public class ReferenceNozzleConfigurationWizard extends AbstractConfigurationWiz
         ComponentDecorators.decorateWithAutoSelectAndLengthConversion(locationZ);
         ComponentDecorators.decorateWithAutoSelect(locationRotation);
         ComponentDecorators.decorateWithAutoSelectAndLengthConversion(textFieldSafeZ);
+        ComponentDecorators.decorateWithAutoSelect(placeOffsetXTf);
+        ComponentDecorators.decorateWithAutoSelect(placeOffsetYTf);
     }
 }

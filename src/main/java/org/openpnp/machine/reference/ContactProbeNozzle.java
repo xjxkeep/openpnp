@@ -309,6 +309,13 @@ public class ContactProbeNozzle extends ReferenceNozzle {
                 nozzleTip.getMaxPartHeight() // for discard 
                 : getSafePartHeight(part));  // for normal part operation
         Location placementLocationPart = placementLocation.add(new Location(partHeight.getUnits(), 0, 0, partHeight.getValue(), 0));
+        
+        // Apply placement offsets for static calibration
+        if (getPlaceOffsetX() != 0.0 || getPlaceOffsetY() != 0.0) {
+            placementLocationPart = placementLocationPart.add(new Location(placementLocationPart.getUnits(), 
+                    getPlaceOffsetX(), getPlaceOffsetY(), 0, 0));
+        }
+        
         // null part means discarding. 
         String partId = (part != null ? part.getId() : "discard");
         if (isPartHeightProbingNeeded(part)) {

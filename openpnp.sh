@@ -16,13 +16,25 @@ esac
 # 检查源文件是否有变更
 check_source_changes() {
     # 获取所有 Java 源文件的最后修改时间
-    latest_change=$(find src -name "*.java" -type f -exec stat -f "%m" {} \; | sort -n | tail -1)
-    
-    # 获取 target 目录下编译后的文件时间
-    if [ -f "$rootdir/target/openpnp-gui-0.0.1-alpha-SNAPSHOT.jar" ]; then
-        jar_time=$(stat -f "%m" "$rootdir/target/openpnp-gui-0.0.1-alpha-SNAPSHOT.jar")
+    if [ "$platform" = "linux" ]; then
+        latest_change=$(find src -name "*.java" -type f -exec stat -c "%Y" {} \; | sort -n | tail -1)
+        
+        # 获取 target 目录下编译后的文件时间
+        if [ -f "$rootdir/target/openpnp-gui-0.0.1-alpha-SNAPSHOT.jar" ]; then
+            jar_time=$(stat -c "%Y" "$rootdir/target/openpnp-gui-0.0.1-alpha-SNAPSHOT.jar")
+        else
+            jar_time=0
+        fi
     else
-        jar_time=0
+        # macOS 使用 stat -f "%m"
+        latest_change=$(find src -name "*.java" -type f -exec stat -f "%m" {} \; | sort -n | tail -1)
+        
+        # 获取 target 目录下编译后的文件时间
+        if [ -f "$rootdir/target/openpnp-gui-0.0.1-alpha-SNAPSHOT.jar" ]; then
+            jar_time=$(stat -f "%m" "$rootdir/target/openpnp-gui-0.0.1-alpha-SNAPSHOT.jar")
+        else
+            jar_time=0
+        fi
     fi
     
     # 如果源文件比编译文件新，则需要重新编译
