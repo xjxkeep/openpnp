@@ -716,26 +716,49 @@ public class ReferenceStripFeederConfigurationWizard extends AbstractConfigurati
     private JTextField pickRetryCount;
 
     private List<Location> findHoles(Camera camera) throws Exception {
-        // Process the pipeline to clean up the image and detect the tape holes
-        try (CvPipeline pipeline = getCvPipeline(camera, true)) {
-            pipeline.process();
+        Exception lastException = null;
+        int maxRetries = 3;
+        
+        for (int attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                // Process the pipeline to clean up the image and detect the tape holes
+                try (CvPipeline pipeline = getCvPipeline(camera, true)) {
+                    pipeline.process();
+                    
+                    // Grab the results
+                    FindHoles findHolesResults = new FindHoles(camera, pipeline).invoke();
+                    List<CvStage.Result.Circle> inLine = findHolesResults.getInLine();
+                    if (inLine.isEmpty()) {
+                        throw new Exception("Feeder " + getName() + ": No tape holes found.");
+                    }
             
-            // Grab the results
-            FindHoles findHolesResults = new FindHoles(camera, pipeline).invoke();
-            List<CvStage.Result.Circle> inLine = findHolesResults.getInLine();
-            if (inLine.isEmpty()) {
-                throw new Exception("Feeder " + getName() + ": No tape holes found.");
+                    List<Location> holeLocations = new ArrayList<>();
+                    for (int i=0; i<inLine.size(); i++) {
+                        CvStage.Result.Circle result = inLine.get(i);
+                        Location location = VisionUtils.getPixelLocation(camera, result.x, result.y);
+                        holeLocations.add(location);
+                    }
+            
+                    return holeLocations;
+                }
+            } catch (Exception e) {
+                lastException = e;
+                if (attempt < maxRetries) {
+                    Logger.debug("Feeder {}: Attempt {} failed, retrying... Error: {}", 
+                        getName(), attempt, e.getMessage());
+                    // 短暂延迟后重试
+                    try {
+                        Thread.sleep(100);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        throw new Exception("Feeder " + getName() + ": Interrupted during retry", ie);
+                    }
+                }
             }
-    
-            List<Location> holeLocations = new ArrayList<>();
-            for (int i=0; i<inLine.size(); i++) {
-                CvStage.Result.Circle result = inLine.get(i);
-                Location location = VisionUtils.getPixelLocation(camera, result.x, result.y);
-                holeLocations.add(location);
-            }
-    
-            return holeLocations;
         }
+        
+        // 所有重试都失败了，抛出最后一次的异常
+        throw new Exception("Feeder " + getName() + ": Failed to find tape holes after " + maxRetries + " attempts. Last error: " + lastException.getMessage(), lastException);
     }
 
     /**
