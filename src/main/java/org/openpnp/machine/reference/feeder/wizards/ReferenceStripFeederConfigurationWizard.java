@@ -36,9 +36,15 @@ import javax.swing.JComboBox;
 import javax.swing.JDialog;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
+import javax.accessibility.Accessible;
+import javax.swing.JPopupMenu;
 import javax.swing.JTextField;
 import javax.swing.SwingUtilities;
+import javax.swing.Timer;
 import javax.swing.border.TitledBorder;
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
+import javax.swing.plaf.basic.BasicComboBoxEditor;
 
 import org.jdesktop.beansbinding.AutoBinding.UpdateStrategy;
 import org.opencv.core.Mat;
@@ -60,7 +66,7 @@ import org.openpnp.gui.support.IntegerConverter;
 import org.openpnp.gui.support.LengthConverter;
 import org.openpnp.gui.support.MessageBoxes;
 import org.openpnp.gui.support.MutableLocationProxy;
-import org.openpnp.gui.support.PartsComboBoxModel;
+import org.openpnp.gui.support.SearchablePartsComboBoxModel;
 import org.openpnp.machine.reference.camera.BufferedImageCamera;
 import org.openpnp.machine.reference.feeder.ReferenceStripFeeder;
 import org.openpnp.machine.reference.feeder.ReferenceStripFeeder.TapeType;
@@ -174,9 +180,103 @@ public class ReferenceStripFeederConfigurationWizard extends AbstractConfigurati
         lblPart = new JLabel(Translations.getString("ReferenceStripFeederConfigurationWizard.PartLabel.text")); //$NON-NLS-1$
         panelPart.add(lblPart, "2, 2, right, default");
 
+        final SearchablePartsComboBoxModel partModel = new SearchablePartsComboBoxModel();
         comboBoxPart = new JComboBox();
-        comboBoxPart.setModel(new PartsComboBoxModel());
+        comboBoxPart.setModel(partModel);
         comboBoxPart.setRenderer(new IdentifiableListCellRenderer<Part>());
+        comboBoxPart.setEditable(true);
+        comboBoxPart.setMaximumRowCount(15);
+        comboBoxPart.setEditor(new BasicComboBoxEditor() {
+            private Part lastPart;
+            @Override
+            public void setItem(Object item) {
+                lastPart = (item instanceof Part) ? (Part) item : null;
+                // While the user has focus in the editor they may be typing a search
+                // query; don't clobber their text with the programmatically-selected
+                // item's id. The ItemListener below re-syncs the text when the user
+                // actually commits a selection.
+                if (editor.hasFocus()) {
+                    return;
+                }
+                if (lastPart != null) {
+                    String id = lastPart.getId();
+                    editor.setText(id == null ? "" : id);
+                }
+                else {
+                    editor.setText(item == null ? "" : item.toString());
+                }
+            }
+            @Override
+            public Object getItem() {
+                String text = editor.getText();
+                if (lastPart != null && text.equals(lastPart.getId())) {
+                    return lastPart;
+                }
+                for (Part p : Configuration.get().getParts()) {
+                    if (text.equals(p.getId())) {
+                        lastPart = p;
+                        return p;
+                    }
+                }
+                return lastPart;
+            }
+        });
+        final JTextField partEditor = (JTextField) comboBoxPart.getEditor().getEditorComponent();
+        final boolean[] syncingEditor = { false };
+        comboBoxPart.addItemListener(e -> {
+            if (e.getStateChange() == java.awt.event.ItemEvent.SELECTED
+                    && e.getItem() instanceof Part) {
+                String id = ((Part) e.getItem()).getId();
+                if (id != null && !id.equals(partEditor.getText())) {
+                    syncingEditor[0] = true;
+                    try {
+                        partEditor.setText(id);
+                    }
+                    finally {
+                        syncingEditor[0] = false;
+                    }
+                }
+                partModel.setFilter("");
+            }
+        });
+        // Debounce the filter update. Touching popup/model while the user is
+        // actively typing races with the macOS IME's async document queries and
+        // produces "Invalid range" stack traces. 120 ms is enough for IME to
+        // finish its invokeAndWait before we reshape the UI.
+        final Timer filterDebounce = new Timer(120, e -> {
+            if (syncingEditor[0]) {
+                return;
+            }
+            String text = partEditor.getText();
+            partModel.setFilter(text);
+            if (partEditor.hasFocus() && partModel.getSize() > 0) {
+                if (!comboBoxPart.isPopupVisible()) {
+                    comboBoxPart.showPopup();
+                }
+                else {
+                    Accessible ac = comboBoxPart.getUI()
+                            .getAccessibleChild(comboBoxPart, 0);
+                    if (ac instanceof JPopupMenu) {
+                        ((JPopupMenu) ac).pack();
+                    }
+                }
+            }
+            else if (partModel.getSize() == 0) {
+                comboBoxPart.hidePopup();
+            }
+        });
+        filterDebounce.setRepeats(false);
+        partEditor.getDocument().addDocumentListener(new DocumentListener() {
+            private void onChange() {
+                if (syncingEditor[0]) {
+                    return;
+                }
+                filterDebounce.restart();
+            }
+            @Override public void insertUpdate(DocumentEvent e) { onChange(); }
+            @Override public void removeUpdate(DocumentEvent e) { onChange(); }
+            @Override public void changedUpdate(DocumentEvent e) { onChange(); }
+        });
         panelPart.add(comboBoxPart, "4, 2, 3, 1, left, default");
 
         comboBoxPart.addActionListener(new ActionListener() {
