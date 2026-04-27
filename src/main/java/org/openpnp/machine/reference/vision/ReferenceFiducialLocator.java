@@ -29,6 +29,7 @@ import org.openpnp.model.AbstractVisionSettings;
 import org.openpnp.model.Configuration;
 import org.openpnp.model.FiducialVisionSettings;
 import org.openpnp.model.Footprint;
+import org.openpnp.model.HomographyTransform;
 import org.openpnp.model.Length;
 import org.openpnp.model.LengthUnit;
 import org.openpnp.model.Location;
@@ -86,6 +87,14 @@ public class ReferenceFiducialLocator extends AbstractPartSettingsHolder impleme
 
     @Element(required = false)
     protected FiducialLocatorTolerances tolerances = new FiducialLocatorTolerances();
+
+    public enum PlacementTransformAlgorithm {
+        Affine,
+        Homography
+    }
+
+    @Attribute(required = false)
+    protected PlacementTransformAlgorithm placementTransformAlgorithm = PlacementTransformAlgorithm.Affine;
 
     public static class FiducialLocatorTolerances {
         protected double scalingTolerance = 0.05; //unitless
@@ -214,6 +223,9 @@ public class ReferenceFiducialLocator extends AbstractPartSettingsHolder impleme
         Side boardSide = placementsHolderLocation.getGlobalSide();  // save for later
         Location savedBoardLocation = placementsHolderLocation.getGlobalLocation();
         AffineTransform savedPlacementTransform = placementsHolderLocation.getLocalToParentTransform();
+        HomographyTransform savedPlacementHomography = placementsHolderLocation.hasLocalToParentHomography()
+                ? placementsHolderLocation.getLocalToParentHomography()
+                : null;
 
         // collect all measured locations and recalculate all expected locations
         List<Location> expectedLocations = new ArrayList<>();
@@ -225,13 +237,31 @@ public class ReferenceFiducialLocator extends AbstractPartSettingsHolder impleme
         
         // Calculate the transform.
         AffineTransform tx = Utils2D.deriveAffineTransform(expectedLocations, measuredLocations);
+        boolean useHomography = placementTransformAlgorithm == PlacementTransformAlgorithm.Homography
+                && expectedLocations.size() >= 4;
+        if (placementTransformAlgorithm == PlacementTransformAlgorithm.Homography
+                && expectedLocations.size() < 4) {
+            Logger.warn("Homography fiducial locator requested for {}, but only {} fiducials were measured. Falling back to affine.",
+                    placementsHolderLocation.getUniqueId(), expectedLocations.size());
+        }
+        HomographyTransform homography = useHomography
+                ? HomographyTransform.derive(expectedLocations, measuredLocations)
+                : null;
         
         if (boardSide == Side.Bottom) {
             tx.scale(-1, 1);
+            if (homography != null) {
+                homography = homography.concatenate(HomographyTransform.scale(-1, 1));
+            }
         }
         
         // Set the transform.
-        placementsHolderLocation.setLocalToGlobalTransform(tx);
+        if (homography != null) {
+            placementsHolderLocation.setLocalToGlobalHomography(homography);
+        }
+        else {
+            placementsHolderLocation.setLocalToGlobalTransform(tx);
+        }
         
         // Return the compensated board location
         Location origin = new Location(LengthUnit.Millimeters);
@@ -298,7 +328,12 @@ public class ReferenceFiducialLocator extends AbstractPartSettingsHolder impleme
         }
         if (errString.length() > 0) {
             errString = errString.substring(0, errString.length()-2); //strip off the last comma and space
-            placementsHolderLocation.setLocalToParentTransform(savedPlacementTransform);
+            if (savedPlacementHomography != null) {
+                placementsHolderLocation.setLocalToParentHomography(savedPlacementHomography);
+            }
+            else {
+                placementsHolderLocation.setLocalToParentTransform(savedPlacementTransform);
+            }
             throw new Exception("Fiducial locator results are invalid for " + 
                     placementsHolderLocation.getUniqueId() + " because: " + errString + ". Potential remidies include " +
                     "setting the initial board X, Y, Z, and Rotation in the Boards panel; using a different set of fiducials; " +
@@ -701,6 +736,20 @@ public class ReferenceFiducialLocator extends AbstractPartSettingsHolder impleme
 
     public void setMaxDistance(Length maxDistance) {
         this.maxDistance = maxDistance;
+    }
+
+    public PlacementTransformAlgorithm getPlacementTransformAlgorithm() {
+        return placementTransformAlgorithm;
+    }
+
+    public void setPlacementTransformAlgorithm(PlacementTransformAlgorithm placementTransformAlgorithm) {
+        PlacementTransformAlgorithm oldValue = this.placementTransformAlgorithm;
+        this.placementTransformAlgorithm = placementTransformAlgorithm == null
+                ? PlacementTransformAlgorithm.Affine
+                : placementTransformAlgorithm;
+        if (oldValue != this.placementTransformAlgorithm) {
+            firePropertyChange("placementTransformAlgorithm", oldValue, this.placementTransformAlgorithm);
+        }
     }
 
     public CvPipeline getPipeline() {

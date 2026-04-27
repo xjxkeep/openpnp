@@ -29,14 +29,17 @@ import java.util.List;
 import org.openpnp.gui.JobPanel;
 import org.openpnp.gui.MainFrame;
 import org.openpnp.gui.support.MessageBoxes;
+import org.openpnp.machine.reference.vision.ReferenceFiducialLocator;
 import org.openpnp.model.Abstract2DLocatable.Side;
 import org.openpnp.model.Configuration;
+import org.openpnp.model.HomographyTransform;
 import org.openpnp.model.Length;
 import org.openpnp.model.LengthUnit;
 import org.openpnp.model.Location;
 import org.openpnp.model.Placement;
 import org.openpnp.model.PlacementsHolderLocation;
 import org.openpnp.spi.Camera;
+import org.openpnp.spi.FiducialLocator;
 import org.openpnp.util.MovableUtils;
 import org.openpnp.util.TravellingSalesman;
 import org.openpnp.util.UiUtils;
@@ -74,6 +77,7 @@ public class MultiPlacementBoardLocationProcess {
     private Side boardSide;
     private Location savedBoardLocation;
     private AffineTransform savedPlacementTransform;
+    private HomographyTransform savedPlacementHomography;
     private MultiPlacementBoardLocationProperties props;
     private boolean autoMove;
 
@@ -82,6 +86,9 @@ public class MultiPlacementBoardLocationProcess {
         private double shearingTolerance = 0.05; //unitless
         protected Length boardLocationTolerance = new Length(5.0, LengthUnit.Millimeters);
         private boolean autoMoveForAllPlacements = true;
+        @Deprecated
+        private ReferenceFiducialLocator.PlacementTransformAlgorithm placementTransformAlgorithm =
+                ReferenceFiducialLocator.PlacementTransformAlgorithm.Affine;
     }
     
     public MultiPlacementBoardLocationProcess(MainFrame mainFrame, JobPanel jobPanel)
@@ -101,6 +108,9 @@ public class MultiPlacementBoardLocationProcess {
         //Save the current board location and transform in case it needs to be restored
         savedBoardLocation = boardLocation.getGlobalLocation();
         savedPlacementTransform = boardLocation.getLocalToParentTransform();
+        savedPlacementHomography = boardLocation.hasLocalToParentHomography()
+                ? boardLocation.getLocalToParentHomography()
+                : null;
         
         // Clear the current transform so it doesn't potentially send us to the wrong spot
         // to find the placements.
@@ -129,6 +139,7 @@ public class MultiPlacementBoardLocationProcess {
         Logger.trace("Board location tolerance = " + props.boardLocationTolerance);
         Logger.trace("Board scaling tolerance = " + props.scalingTolerance);
         Logger.trace("Board shearing tolerance = " + props.shearingTolerance);
+        Logger.info("Board placement transform algorithm = " + getPlacementTransformAlgorithm());
         
         advance();
     }
@@ -310,15 +321,39 @@ public class MultiPlacementBoardLocationProcess {
     }
 
     private Location setBoardLocationAndPlacementTransform() {
+        ReferenceFiducialLocator.PlacementTransformAlgorithm placementTransformAlgorithm =
+                getPlacementTransformAlgorithm();
+        boolean useHomography = placementTransformAlgorithm
+                == ReferenceFiducialLocator.PlacementTransformAlgorithm.Homography
+                && expectedLocations.size() >= 4;
+        if (placementTransformAlgorithm
+                == ReferenceFiducialLocator.PlacementTransformAlgorithm.Homography
+                && expectedLocations.size() < 4) {
+            Logger.warn("Homography board location requested, but only {} points were measured. Falling back to affine.",
+                    expectedLocations.size());
+        }
+
         AffineTransform tx = Utils2D.deriveAffineTransform(expectedLocations, measuredLocations);
+        HomographyTransform homography = null;
+        if (useHomography) {
+            homography = HomographyTransform.derive(expectedLocations, measuredLocations);
+        }
         
         if (boardSide == Side.Bottom) {
             tx.scale(-1, 1);
+            if (homography != null) {
+                homography = homography.concatenate(HomographyTransform.scale(-1, 1));
+            }
         }
         
         // Set the transform.
         try {
-            boardLocation.setLocalToGlobalTransform(tx);
+            if (homography != null) {
+                boardLocation.setLocalToGlobalHomography(homography);
+            }
+            else {
+                boardLocation.setLocalToGlobalTransform(tx);
+            }
         }
         catch (NoninvertibleTransformException e) {
             // TODO Auto-generated catch block
@@ -343,7 +378,12 @@ public class MultiPlacementBoardLocationProcess {
             //BoardLocation.setPlacementTransform method perform the above calculations and set the location
             //itself since it already has all the needed information???
             try {
-                boardLocation.setLocalToGlobalTransform(tx);
+                if (homography != null) {
+                    boardLocation.setLocalToGlobalHomography(homography);
+                }
+                else {
+                    boardLocation.setLocalToGlobalTransform(tx);
+                }
             }
             catch (NoninvertibleTransformException e) {
                 // TODO Auto-generated catch block
@@ -352,6 +392,16 @@ public class MultiPlacementBoardLocationProcess {
         }
         
         return newBoardLocation;
+    }
+
+    private ReferenceFiducialLocator.PlacementTransformAlgorithm getPlacementTransformAlgorithm() {
+        FiducialLocator fiducialLocator = Configuration.get().getMachine().getFiducialLocator();
+        if (fiducialLocator instanceof ReferenceFiducialLocator) {
+            return ((ReferenceFiducialLocator) fiducialLocator).getPlacementTransformAlgorithm();
+        }
+        return props.placementTransformAlgorithm == null
+                ? ReferenceFiducialLocator.PlacementTransformAlgorithm.Affine
+                : props.placementTransformAlgorithm;
     }
 
     private List<Placement> optimizePlacementOrder(List<Placement> placements) {
@@ -378,7 +428,12 @@ public class MultiPlacementBoardLocationProcess {
     private void cancel() {
         //Restore the old settings
         boardLocation.setLocation(savedBoardLocation);
-        boardLocation.setLocalToParentTransform(savedPlacementTransform);
+        if (savedPlacementHomography != null) {
+            boardLocation.setLocalToParentHomography(savedPlacementHomography);
+        }
+        else {
+            boardLocation.setLocalToParentTransform(savedPlacementTransform);
+        }
         jobPanel.refreshSelectedRow();
         
         mainFrame.hideInstructions();

@@ -36,6 +36,7 @@ public class ReferenceFiducialLocatorConfigurationWizard extends AbstractConfigu
     JCheckBox enabledAveragingCheckbox; 
     private JTextField maxDistance;
     private JComboBox visionSettings;
+    private JComboBox placementTransformAlgorithm;
 
     private boolean reloadWizard;
 
@@ -62,6 +63,8 @@ public class ReferenceFiducialLocatorConfigurationWizard extends AbstractConfigu
                 FormSpecs.RELATED_GAP_ROWSPEC,
                 FormSpecs.DEFAULT_ROWSPEC,
                 FormSpecs.RELATED_GAP_ROWSPEC,
+                FormSpecs.DEFAULT_ROWSPEC,
+                FormSpecs.RELATED_GAP_ROWSPEC,
                 FormSpecs.DEFAULT_ROWSPEC,}));
         
         JLabel lblVisionSettings = new JLabel(Translations.getString(
@@ -78,23 +81,32 @@ public class ReferenceFiducialLocatorConfigurationWizard extends AbstractConfigu
         });
         panel.add(visionSettings, "4, 2, 3, 1, fill, default");
 
+        JLabel lblPlacementTransformAlgorithm = new JLabel(Translations.getString(
+                "ReferenceFiducialLocatorConfigurationWizard.GeneralPanel.PlacementTransformAlgorithmLabel.text")); //$NON-NLS-1$
+        lblPlacementTransformAlgorithm.setToolTipText(Translations.getString(
+                "ReferenceFiducialLocatorConfigurationWizard.GeneralPanel.PlacementTransformAlgorithmLabel.toolTipText")); //$NON-NLS-1$
+        panel.add(lblPlacementTransformAlgorithm, "2, 4, right, default");
+
+        placementTransformAlgorithm = new JComboBox(ReferenceFiducialLocator.PlacementTransformAlgorithm.values());
+        panel.add(placementTransformAlgorithm, "4, 4, fill, default");
+
         JLabel lblEnabledAveraging = new JLabel(Translations.getString(
                 "ReferenceFiducialLocatorConfigurationWizard.GeneralPanel.AverageMatchesLabel.text")); //$NON-NLS-1$
         lblEnabledAveraging.setToolTipText(Translations.getString(
                 "ReferenceFiducialLocatorConfigurationWizard.GeneralPanel.AverageMatchesLabel.toolTipText")); //$NON-NLS-1$
-        panel.add(lblEnabledAveraging, "2, 4");
+        panel.add(lblEnabledAveraging, "2, 6");
 
         enabledAveragingCheckbox = new JCheckBox("");
-        panel.add(enabledAveragingCheckbox, "4, 4");
+        panel.add(enabledAveragingCheckbox, "4, 6");
         
         JLabel lblMaxDistance = new JLabel(Translations.getString(
                 "ReferenceFiducialLocatorConfigurationWizard.GeneralPanel.MaxDistanceLabel.text")); //$NON-NLS-1$
         lblMaxDistance.setToolTipText(Translations.getString(
                 "ReferenceFiducialLocatorConfigurationWizard.GeneralPanel.MaxDistanceLabel.toolTipText")); //$NON-NLS-1$
-        panel.add(lblMaxDistance, "2, 6, right, default");
+        panel.add(lblMaxDistance, "2, 8, right, default");
         
         maxDistance = new JTextField();
-        panel.add(maxDistance, "4, 6, fill, default");
+        panel.add(maxDistance, "4, 8, fill, default");
         maxDistance.setColumns(10);
 
     }
@@ -122,6 +134,7 @@ public class ReferenceFiducialLocatorConfigurationWizard extends AbstractConfigu
         LengthConverter lengthConverter = new LengthConverter();
 
         addWrappedBinding(fiducialLocator, "fiducialVisionSettings", visionSettings, "selectedItem");
+        addWrappedBinding(fiducialLocator, "placementTransformAlgorithm", placementTransformAlgorithm, "selectedItem");
         
         addWrappedBinding(fiducialLocator, "enabledAveraging", enabledAveragingCheckbox, "selected");
         addWrappedBinding(fiducialLocator, "maxDistance", maxDistance, "text", lengthConverter);

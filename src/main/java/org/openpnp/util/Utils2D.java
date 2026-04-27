@@ -34,6 +34,7 @@ import org.opencv.core.RotatedRect;
 import org.opencv.core.Size;
 import org.openpnp.model.Abstract2DLocatable;
 import org.openpnp.model.Abstract2DLocatable.Side;
+import org.openpnp.model.HomographyTransform;
 import org.openpnp.model.Length;
 import org.openpnp.model.LengthUnit;
 import org.openpnp.model.Location;
@@ -267,6 +268,21 @@ public class Utils2D {
         LengthUnit placementUnits = placementLocation.getUnits();
         placementLocation = placementLocation.convertToUnits(LengthUnit.Millimeters);
 
+        boolean useHomography = local ? bl.hasLocalToParentHomography() : bl.hasLocalToGlobalHomography();
+        if (useHomography) {
+            HomographyTransform homography = local ? bl.getLocalToParentHomography()
+                    : bl.getLocalToGlobalHomography();
+            Point2D p = homography.transform(placementLocation.getX(), placementLocation.getY());
+            double angle = homography.getRotationAngleAt(placementLocation.getX(), placementLocation.getY());
+            Location l = new Location(LengthUnit.Millimeters,
+                    p.getX(),
+                    p.getY(),
+                    boardLocation.getZ() + placementLocation.getZ(),
+                    angle + angleSign*placementLocation.getRotation());
+            l = l.convertToUnits(placementUnits);
+            return l;
+        }
+
         double angle = getTransformAngle(tx);
         
         Point2D p = new Point2D.Double(placementLocation.getX(), placementLocation.getY());
@@ -285,6 +301,26 @@ public class Utils2D {
 
     public static Location calculateBoardPlacementLocationInverse(PlacementsHolderLocation<?> bl,
             Location placementLocation) {
+        if (bl.hasLocalToGlobalHomography()) {
+            HomographyTransform tx = bl.getLocalToGlobalHomography();
+            HomographyTransform inverseTx = tx.createInverse();
+            double angleSign = 1.0;
+            if (bl.getGlobalSide() == Side.Bottom) {
+                angleSign = -1.0;
+            }
+            LengthUnit placementUnits = placementLocation.getUnits();
+            Location boardLocation = bl.getGlobalLocation().convertToUnits(LengthUnit.Millimeters);
+            placementLocation = placementLocation.convertToUnits(LengthUnit.Millimeters);
+            Point2D p = inverseTx.transform(placementLocation.getX(), placementLocation.getY());
+            double angle = tx.getRotationAngleAt(p.getX(), p.getY());
+            Location l = new Location(LengthUnit.Millimeters,
+                    p.getX(),
+                    p.getY(),
+                    placementLocation.getZ() - boardLocation.getZ(),
+                    placementLocation.getRotation() - angleSign*angle);
+            l = l.convertToUnits(placementUnits);
+            return l;
+        }
         AffineTransform tx = bl.getLocalToGlobalTransform();
         if (tx == null) {
             tx = getDefaultBoardPlacementLocationTransform(bl);

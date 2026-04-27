@@ -26,6 +26,7 @@ import java.io.IOException;
 import org.openpnp.gui.MainFrame;
 import org.openpnp.util.Utils2D;
 import org.simpleframework.xml.Attribute;
+import org.simpleframework.xml.Element;
 import org.simpleframework.xml.core.Commit;
 
 /**
@@ -56,6 +57,8 @@ public abstract class PlacementsHolderLocation<T extends PlacementsHolderLocatio
      * Important note: The transform is in Millimeters.
      */
     protected AffineTransform localToParentTransform;
+    @Element(required = false)
+    protected HomographyTransform localToParentHomography;
     protected PlacementsTransformStatus placementsTransformStatus = PlacementsTransformStatus.NotSet;
     
     @Commit
@@ -94,6 +97,13 @@ public abstract class PlacementsHolderLocation<T extends PlacementsHolderLocatio
         }
         else {
             this.localToParentTransform = null;
+        }
+        if (placementsHolderLocationToCopy.localToParentHomography != null) {
+            this.localToParentHomography =
+                    new HomographyTransform(placementsHolderLocationToCopy.localToParentHomography);
+        }
+        else {
+            this.localToParentHomography = null;
         }
         placementsTransformStatus = placementsHolderLocationToCopy.placementsTransformStatus;
     }
@@ -312,8 +322,41 @@ public abstract class PlacementsHolderLocation<T extends PlacementsHolderLocatio
     public void setLocalToParentTransform(AffineTransform localToParentTransform) {
         Object oldValue = this.localToParentTransform;
         this.localToParentTransform = localToParentTransform;
+        Object oldHomography = this.localToParentHomography;
+        this.localToParentHomography = null;
         firePropertyChange("localToParentTransform", oldValue, localToParentTransform);
+        firePropertyChange("localToParentHomography", oldHomography, null);
         if (localToParentTransform == null) {
+            setPlacementsTransformStatus(PlacementsTransformStatus.NotSet);
+        }
+    }
+
+    public boolean hasLocalToParentHomography() {
+        return localToParentHomography != null;
+    }
+
+    public boolean hasLocalToGlobalHomography() {
+        return hasLocalToParentHomography()
+                || (parent != null && parent.hasLocalToGlobalHomography());
+    }
+
+    public HomographyTransform getLocalToParentHomography() {
+        if (localToParentHomography != null) {
+            return new HomographyTransform(localToParentHomography);
+        }
+        return HomographyTransform.fromAffine(getLocalToParentTransform());
+    }
+
+    public void setLocalToParentHomography(HomographyTransform localToParentHomography) {
+        Object oldHomography = this.localToParentHomography;
+        Object oldTransform = this.localToParentTransform;
+        this.localToParentHomography =
+                localToParentHomography == null ? null : new HomographyTransform(localToParentHomography);
+        this.localToParentTransform =
+                localToParentHomography == null ? null : localToParentHomography.toAffineApproximation();
+        firePropertyChange("localToParentHomography", oldHomography, this.localToParentHomography);
+        firePropertyChange("localToParentTransform", oldTransform, this.localToParentTransform);
+        if (localToParentHomography == null) {
             setPlacementsTransformStatus(PlacementsTransformStatus.NotSet);
         }
     }
@@ -331,6 +374,14 @@ public abstract class PlacementsHolderLocation<T extends PlacementsHolderLocatio
         }
         return at;
     }
+
+    public HomographyTransform getLocalToGlobalHomography() {
+        HomographyTransform homography = getLocalToParentHomography();
+        if (parent != null) {
+            homography = parent.getLocalToGlobalHomography().concatenate(homography);
+        }
+        return homography;
+    }
     
     /**
      * Sets the AffineTransform that transforms coordinates expressed in the 
@@ -347,6 +398,17 @@ public abstract class PlacementsHolderLocation<T extends PlacementsHolderLocatio
                     .createInverse());
         }
         setLocalToParentTransform(localToParentTransform);
+        setPlacementsTransformStatus(PlacementsTransformStatus.LocallySet);
+    }
+
+    public void setLocalToGlobalHomography(HomographyTransform localToGlobalHomography) {
+        HomographyTransform localToParentHomography = new HomographyTransform(localToGlobalHomography);
+        if (parent != null) {
+            localToParentHomography = parent.getLocalToGlobalHomography()
+                    .createInverse()
+                    .concatenate(localToParentHomography);
+        }
+        setLocalToParentHomography(localToParentHomography);
         setPlacementsTransformStatus(PlacementsTransformStatus.LocallySet);
     }
     
