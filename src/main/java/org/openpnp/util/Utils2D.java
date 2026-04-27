@@ -754,6 +754,82 @@ public class Utils2D {
                 translation.getEntry(0, 0),     translation.getEntry(1, 0) );        
     }
 
+    public static double calculateAffineRmsError(AffineTransform tx, List<Location> source, List<Location> destination) {
+        int n = Math.min(source.size(), destination.size());
+        if (n == 0) {
+            return 0.0;
+        }
+        double sum = 0.0;
+        for (int i = 0; i < n; i++) {
+            Location s = source.get(i).convertToUnits(LengthUnit.Millimeters);
+            Location d = destination.get(i).convertToUnits(LengthUnit.Millimeters);
+            Point2D.Double p = new Point2D.Double(s.getX(), s.getY());
+            tx.transform(p, p);
+            sum += squareDistance(p.x, p.y, d.getX(), d.getY());
+        }
+        return Math.sqrt(sum / n);
+    }
+
+    public static double calculateHomographyRmsError(HomographyTransform tx, List<Location> source,
+            List<Location> destination) {
+        int n = Math.min(source.size(), destination.size());
+        if (n == 0) {
+            return 0.0;
+        }
+        double sum = 0.0;
+        for (int i = 0; i < n; i++) {
+            Location s = source.get(i).convertToUnits(LengthUnit.Millimeters);
+            Location d = destination.get(i).convertToUnits(LengthUnit.Millimeters);
+            Point2D.Double p = tx.transform(s.getX(), s.getY());
+            sum += squareDistance(p.x, p.y, d.getX(), d.getY());
+        }
+        return Math.sqrt(sum / n);
+    }
+
+    public static double calculateHomographyAffineDeviation(AffineTransform affine, HomographyTransform homography,
+            List<Location> source) {
+        if (source.isEmpty()) {
+            return 0.0;
+        }
+
+        double minX = Double.POSITIVE_INFINITY;
+        double minY = Double.POSITIVE_INFINITY;
+        double maxX = Double.NEGATIVE_INFINITY;
+        double maxY = Double.NEGATIVE_INFINITY;
+        double maxDeviation = 0.0;
+        for (Location location : source) {
+            Location l = location.convertToUnits(LengthUnit.Millimeters);
+            maxDeviation = Math.max(maxDeviation,
+                    calculateHomographyAffineDeviation(affine, homography, l.getX(), l.getY()));
+            minX = Math.min(minX, l.getX());
+            minY = Math.min(minY, l.getY());
+            maxX = Math.max(maxX, l.getX());
+            maxY = Math.max(maxY, l.getY());
+        }
+
+        maxDeviation = Math.max(maxDeviation, calculateHomographyAffineDeviation(affine, homography, minX, minY));
+        maxDeviation = Math.max(maxDeviation, calculateHomographyAffineDeviation(affine, homography, minX, maxY));
+        maxDeviation = Math.max(maxDeviation, calculateHomographyAffineDeviation(affine, homography, maxX, minY));
+        maxDeviation = Math.max(maxDeviation, calculateHomographyAffineDeviation(affine, homography, maxX, maxY));
+        maxDeviation = Math.max(maxDeviation,
+                calculateHomographyAffineDeviation(affine, homography, (minX + maxX) / 2.0, (minY + maxY) / 2.0));
+        return maxDeviation;
+    }
+
+    private static double calculateHomographyAffineDeviation(AffineTransform affine, HomographyTransform homography,
+            double x, double y) {
+        Point2D.Double affinePoint = new Point2D.Double(x, y);
+        affine.transform(affinePoint, affinePoint);
+        Point2D.Double homographyPoint = homography.transform(x, y);
+        return Math.sqrt(squareDistance(affinePoint.x, affinePoint.y, homographyPoint.x, homographyPoint.y));
+    }
+
+    private static double squareDistance(double x0, double y0, double x1, double y1) {
+        double dx = x0 - x1;
+        double dy = y0 - y1;
+        return dx * dx + dy * dy;
+    }
+
     /**
      * Calculate the area of a triangle. Returns 0 if the triangle is degenerate.
      * @param p1

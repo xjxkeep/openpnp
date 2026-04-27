@@ -37,6 +37,7 @@ public class ReferenceFiducialLocatorConfigurationWizard extends AbstractConfigu
     private JTextField maxDistance;
     private JComboBox visionSettings;
     private JComboBox placementTransformAlgorithm;
+    private JTextField perspectiveWarningTolerance;
 
     private boolean reloadWizard;
 
@@ -58,6 +59,8 @@ public class ReferenceFiducialLocatorConfigurationWizard extends AbstractConfigu
                 FormSpecs.RELATED_GAP_COLSPEC,
                 FormSpecs.DEFAULT_COLSPEC,},
             new RowSpec[] {
+                FormSpecs.RELATED_GAP_ROWSPEC,
+                FormSpecs.DEFAULT_ROWSPEC,
                 FormSpecs.RELATED_GAP_ROWSPEC,
                 FormSpecs.DEFAULT_ROWSPEC,
                 FormSpecs.RELATED_GAP_ROWSPEC,
@@ -109,6 +112,16 @@ public class ReferenceFiducialLocatorConfigurationWizard extends AbstractConfigu
         panel.add(maxDistance, "4, 8, fill, default");
         maxDistance.setColumns(10);
 
+        JLabel lblPerspectiveWarningTolerance = new JLabel(Translations.getString(
+                "ReferenceFiducialLocatorConfigurationWizard.GeneralPanel.PerspectiveWarningToleranceLabel.text")); //$NON-NLS-1$
+        lblPerspectiveWarningTolerance.setToolTipText(Translations.getString(
+                "ReferenceFiducialLocatorConfigurationWizard.GeneralPanel.PerspectiveWarningToleranceLabel.toolTipText")); //$NON-NLS-1$
+        panel.add(lblPerspectiveWarningTolerance, "2, 10, right, default");
+
+        perspectiveWarningTolerance = new JTextField();
+        panel.add(perspectiveWarningTolerance, "4, 10, fill, default");
+        perspectiveWarningTolerance.setColumns(10);
+
     }
 
     private static Part createDefaultPart() {
@@ -138,8 +151,11 @@ public class ReferenceFiducialLocatorConfigurationWizard extends AbstractConfigu
         
         addWrappedBinding(fiducialLocator, "enabledAveraging", enabledAveragingCheckbox, "selected");
         addWrappedBinding(fiducialLocator, "maxDistance", maxDistance, "text", lengthConverter);
+        addWrappedBinding(fiducialLocator, "perspectiveWarningTolerance",
+                perspectiveWarningTolerance, "text", lengthConverter);
 
         ComponentDecorators.decorateWithAutoSelectAndLengthConversion(maxDistance);
+        ComponentDecorators.decorateWithAutoSelectAndLengthConversion(perspectiveWarningTolerance);
     }
 
     @Override

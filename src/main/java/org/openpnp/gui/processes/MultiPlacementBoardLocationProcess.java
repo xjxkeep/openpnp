@@ -80,12 +80,15 @@ public class MultiPlacementBoardLocationProcess {
     private HomographyTransform savedPlacementHomography;
     private MultiPlacementBoardLocationProperties props;
     private boolean autoMove;
+    private String lastPerspectiveWarningMessage;
 
     public static class MultiPlacementBoardLocationProperties {
         private double scalingTolerance = 0.05; //unitless
         private double shearingTolerance = 0.05; //unitless
         protected Length boardLocationTolerance = new Length(5.0, LengthUnit.Millimeters);
         private boolean autoMoveForAllPlacements = true;
+        @Deprecated
+        private Length perspectiveWarningTolerance = new Length(0.25, LengthUnit.Millimeters);
         @Deprecated
         private ReferenceFiducialLocator.PlacementTransformAlgorithm placementTransformAlgorithm =
                 ReferenceFiducialLocator.PlacementTransformAlgorithm.Affine;
@@ -305,6 +308,9 @@ public class MultiPlacementBoardLocationProcess {
                 cancel();
                 return false;
             }
+            if (lastPerspectiveWarningMessage != null) {
+                MessageBoxes.infoBox("Perspective Warning", lastPerspectiveWarningMessage);
+            }
             
         }
         return true;
@@ -323,6 +329,7 @@ public class MultiPlacementBoardLocationProcess {
     private Location setBoardLocationAndPlacementTransform() {
         ReferenceFiducialLocator.PlacementTransformAlgorithm placementTransformAlgorithm =
                 getPlacementTransformAlgorithm();
+        lastPerspectiveWarningMessage = null;
         boolean useHomography = placementTransformAlgorithm
                 == ReferenceFiducialLocator.PlacementTransformAlgorithm.Homography
                 && expectedLocations.size() >= 4;
@@ -345,6 +352,8 @@ public class MultiPlacementBoardLocationProcess {
                 homography = homography.concatenate(HomographyTransform.scale(-1, 1));
             }
         }
+
+        lastPerspectiveWarningMessage = getPerspectiveWarningMessage(tx, homography);
         
         // Set the transform.
         try {
@@ -402,6 +411,42 @@ public class MultiPlacementBoardLocationProcess {
         return props.placementTransformAlgorithm == null
                 ? ReferenceFiducialLocator.PlacementTransformAlgorithm.Affine
                 : props.placementTransformAlgorithm;
+    }
+
+    private Length getPerspectiveWarningTolerance() {
+        FiducialLocator fiducialLocator = Configuration.get().getMachine().getFiducialLocator();
+        if (fiducialLocator instanceof ReferenceFiducialLocator) {
+            return ((ReferenceFiducialLocator) fiducialLocator).getPerspectiveWarningTolerance();
+        }
+        return props.perspectiveWarningTolerance == null
+                ? new Length(0.25, LengthUnit.Millimeters)
+                : props.perspectiveWarningTolerance;
+    }
+
+    private String getPerspectiveWarningMessage(AffineTransform affine, HomographyTransform homography) {
+        if (homography == null) {
+            return null;
+        }
+
+        double affineRms = Utils2D.calculateAffineRmsError(affine, expectedLocations, measuredLocations);
+        double homographyRms = Utils2D.calculateHomographyRmsError(homography, expectedLocations, measuredLocations);
+        double perspectiveDeviation = Utils2D.calculateHomographyAffineDeviation(affine, homography, expectedLocations);
+        double warningTolerance = getPerspectiveWarningTolerance().convertToUnits(LengthUnit.Millimeters).getValue();
+
+        Logger.info("Board homography perspective diagnostics: affine RMS={}mm, homography RMS={}mm, max correction={}mm",
+                String.format("%.4f", affineRms),
+                String.format("%.4f", homographyRms),
+                String.format("%.4f", perspectiveDeviation));
+        if (perspectiveDeviation <= warningTolerance) {
+            return null;
+        }
+
+        String message = "Homography perspective correction is " + String.format("%.4f", perspectiveDeviation)
+                + "mm, which is larger than the warning tolerance of "
+                + String.format("%.4f", warningTolerance) + "mm.\n\n"
+                + "Check camera perpendicularity, PCB flatness, fixture repeatability, and lens distortion.";
+        Logger.warn(message);
+        return message;
     }
 
     private List<Placement> optimizePlacementOrder(List<Placement> placements) {

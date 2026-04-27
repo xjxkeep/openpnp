@@ -96,6 +96,9 @@ public class ReferenceFiducialLocator extends AbstractPartSettingsHolder impleme
     @Attribute(required = false)
     protected PlacementTransformAlgorithm placementTransformAlgorithm = PlacementTransformAlgorithm.Affine;
 
+    @Element(required = false)
+    protected Length perspectiveWarningTolerance = new Length(0.25, LengthUnit.Millimeters);
+
     public static class FiducialLocatorTolerances {
         protected double scalingTolerance = 0.05; //unitless
         protected double shearingTolerance = 0.05; //unitless
@@ -254,6 +257,9 @@ public class ReferenceFiducialLocator extends AbstractPartSettingsHolder impleme
                 homography = homography.concatenate(HomographyTransform.scale(-1, 1));
             }
         }
+
+        warnIfPerspectiveTooLarge(placementsHolderLocation.getUniqueId(), tx, homography,
+                expectedLocations, measuredLocations);
         
         // Set the transform.
         if (homography != null) {
@@ -341,6 +347,31 @@ public class ReferenceFiducialLocator extends AbstractPartSettingsHolder impleme
         }
 
         return newBoardLocation;
+    }
+
+    private void warnIfPerspectiveTooLarge(String placementsHolderId, AffineTransform affine,
+            HomographyTransform homography, List<Location> expectedLocations, List<Location> measuredLocations) {
+        if (homography == null) {
+            return;
+        }
+
+        double affineRms = Utils2D.calculateAffineRmsError(affine, expectedLocations, measuredLocations);
+        double homographyRms = Utils2D.calculateHomographyRmsError(homography, expectedLocations, measuredLocations);
+        double perspectiveDeviation = Utils2D.calculateHomographyAffineDeviation(affine, homography, expectedLocations);
+        double warningTolerance = perspectiveWarningTolerance.convertToUnits(LengthUnit.Millimeters).getValue();
+
+        Logger.info("{} homography perspective diagnostics: affine RMS={}mm, homography RMS={}mm, max correction={}mm",
+                placementsHolderId,
+                String.format("%.4f", affineRms),
+                String.format("%.4f", homographyRms),
+                String.format("%.4f", perspectiveDeviation));
+        if (perspectiveDeviation > warningTolerance) {
+            Logger.warn("{} homography perspective correction is {}mm, which is larger than the warning tolerance of {}mm. "
+                    + "Check camera perpendicularity, PCB flatness, fixture repeatability, and lens distortion.",
+                    placementsHolderId,
+                    String.format("%.4f", perspectiveDeviation),
+                    String.format("%.4f", warningTolerance));
+        }
     }
     
     /**
@@ -750,6 +781,19 @@ public class ReferenceFiducialLocator extends AbstractPartSettingsHolder impleme
         if (oldValue != this.placementTransformAlgorithm) {
             firePropertyChange("placementTransformAlgorithm", oldValue, this.placementTransformAlgorithm);
         }
+    }
+
+    public Length getPerspectiveWarningTolerance() {
+        return perspectiveWarningTolerance;
+    }
+
+    public void setPerspectiveWarningTolerance(Length perspectiveWarningTolerance) {
+        Length oldValue = this.perspectiveWarningTolerance;
+        this.perspectiveWarningTolerance = perspectiveWarningTolerance == null
+                ? new Length(0.25, LengthUnit.Millimeters)
+                : perspectiveWarningTolerance;
+        firePropertyChange("perspectiveWarningTolerance", oldValue,
+                this.perspectiveWarningTolerance);
     }
 
     public CvPipeline getPipeline() {
