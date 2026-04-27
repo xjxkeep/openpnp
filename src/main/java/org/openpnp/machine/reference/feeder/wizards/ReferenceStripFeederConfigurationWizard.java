@@ -1192,6 +1192,6 @@ public class ReferenceStripFeederConfigurationWizard extends AbstractConfigurati
     }
 
     private void clearVisionCache() {
-        feeder.resetVision();
+        feeder.resetVisionCache();
     }
 }

@@ -129,6 +129,16 @@ public class ReferenceStripFeeder extends ReferenceFeeder {
 
     private Location visionLocation;
     private Location visionLocationReference;
+    private int visionLocationFeedCount;
+
+    @Element(required = false)
+    private Location persistedVisionLocation;
+
+    @Element(required = false)
+    private Location persistedVisionLocationReference;
+
+    @Attribute(required = false)
+    private Integer persistedVisionLocationFeedCount;
 
     public Length getHoleDiameterMin() {
         return getHoleDiameter().multiply(0.9);
@@ -258,29 +268,35 @@ public class ReferenceStripFeeder extends ReferenceFeeder {
     }
 
     public Location[] getIdealLineLocations() {
-        if (visionLocation == null) {
+        Location activeVisionLocation = getActiveVisionLocation();
+        if (activeVisionLocation == null) {
             return new Location[] {referenceHoleLocation, lastHoleLocation};
         }
 
         Location effectiveReferenceHoleLocation;
         Location effectiveLastHoleLocation;
-        if (visionLocationReference == null) {
+        Location activeVisionLocationReference = getActiveVisionLocationReference();
+        if (activeVisionLocationReference == null) {
             effectiveReferenceHoleLocation = referenceHoleLocation;
             effectiveLastHoleLocation = lastHoleLocation;
         }
         else {
-            effectiveReferenceHoleLocation = visionLocationReference;
+            effectiveReferenceHoleLocation = activeVisionLocationReference;
             // We have a vision-adjusted reference.
             // Apply the same offset to the configured last hole, so that the relative position (ie tape angle) is unchanged
-            effectiveLastHoleLocation = lastHoleLocation.add(visionLocationReference).subtract(referenceHoleLocation);
+            effectiveLastHoleLocation = lastHoleLocation.add(activeVisionLocationReference).subtract(referenceHoleLocation);
         }
 
         double d1 = effectiveReferenceHoleLocation.getLinearLengthTo(effectiveLastHoleLocation)
                 .convertToUnits(LengthUnit.Millimeters).getValue();
-        double d2 = effectiveReferenceHoleLocation.getLinearLengthTo(visionLocation)
+        double d2 = effectiveReferenceHoleLocation.getLinearLengthTo(activeVisionLocation)
                 .convertToUnits(LengthUnit.Millimeters).getValue();
+        int activeVisionLocationFeedCount = getActiveVisionLocationFeedCount();
+        if (activeVisionLocationFeedCount > 1 && d2 > 0.1) {
+            return new Location[] {effectiveReferenceHoleLocation, activeVisionLocation};
+        }
         if (d2 > d1 * 0.9) { // factor to bias towards using vision location if distances are approximately equal
-            return new Location[] {effectiveReferenceHoleLocation, visionLocation};
+            return new Location[] {effectiveReferenceHoleLocation, activeVisionLocation};
         }
         else {
             return new Location[] {effectiveReferenceHoleLocation, effectiveLastHoleLocation};
@@ -344,9 +360,13 @@ public class ReferenceStripFeeder extends ReferenceFeeder {
 
         if (visionFeedCount==1) {
             visionLocationReference = actualLocation;
+            persistedVisionLocationReference = actualLocation;
         }
 
         visionLocation = actualLocation;
+        visionLocationFeedCount = visionFeedCount;
+        persistedVisionLocation = actualLocation;
+        persistedVisionLocationFeedCount = visionFeedCount;
     }
 
     private Location findClosestHole(Camera camera) throws Exception {
@@ -464,13 +484,62 @@ public class ReferenceStripFeeder extends ReferenceFeeder {
     public void setReferenceHoleLocation(Location referenceHoleLocation) {
         Object oldValue = this.referenceHoleLocation;
         this.referenceHoleLocation = referenceHoleLocation;
-        resetVision();
+        resetVisionCache();
         firePropertyChange("referenceHoleLocation", oldValue, referenceHoleLocation);
     }
 
     public void resetVision() {
         visionLocation = null;
         visionLocationReference = null;
+        visionLocationFeedCount = 0;
+    }
+
+    public void resetVisionCache() {
+        resetVision();
+        resetPersistedVision();
+    }
+
+    private void resetPersistedVision() {
+        persistedVisionLocation = null;
+        persistedVisionLocationReference = null;
+        persistedVisionLocationFeedCount = null;
+    }
+
+    private Location getActiveVisionLocation() {
+        if (visionLocation != null) {
+            return visionLocation;
+        }
+        if (isPersistedVisionUsable()) {
+            return persistedVisionLocation;
+        }
+        return null;
+    }
+
+    private Location getActiveVisionLocationReference() {
+        if (visionLocationReference != null) {
+            return visionLocationReference;
+        }
+        if (isPersistedVisionUsable()) {
+            return persistedVisionLocationReference;
+        }
+        return null;
+    }
+
+    private int getActiveVisionLocationFeedCount() {
+        if (visionLocation != null) {
+            return visionLocationFeedCount;
+        }
+        if (isPersistedVisionUsable()) {
+            return persistedVisionLocationFeedCount;
+        }
+        return 0;
+    }
+
+    private boolean isPersistedVisionUsable() {
+        return persistedVisionLocation != null
+                && persistedVisionLocationFeedCount != null
+                && persistedVisionLocationFeedCount > 0
+                && persistedVisionLocationFeedCount <= Math.max(feedCount, 1);
     }
 
     public Location getLastHoleLocation() {
@@ -480,7 +549,7 @@ public class ReferenceStripFeeder extends ReferenceFeeder {
     public void setLastHoleLocation(Location lastHoleLocation) {
         Object oldValue = this.lastHoleLocation;
         this.lastHoleLocation = lastHoleLocation;
-        resetVision();
+        resetVisionCache();
         firePropertyChange("lastHoleLocation", oldValue, lastHoleLocation);
     }
 
@@ -506,6 +575,7 @@ public class ReferenceStripFeeder extends ReferenceFeeder {
 
     public void setPartPitch(Length partPitch) {
         this.partPitch = partPitch;
+        resetVisionCache();
     }
 
     public Length getTapeWidth() {
@@ -527,7 +597,7 @@ public class ReferenceStripFeeder extends ReferenceFeeder {
 
         if (feedCount==0) {
             // Feeder has been reset, so restart vision from the configured starting points
-            resetVision();
+            resetVisionCache();
         }
     }
 
@@ -545,6 +615,7 @@ public class ReferenceStripFeeder extends ReferenceFeeder {
 
     public void setReferenceHoleToPartLinear(Length referenceHoleToPartLinear) {
         this.referenceHoleToPartLinear = referenceHoleToPartLinear;
+        resetVisionCache();
     }
 
     public boolean isVisionEnabled() {
