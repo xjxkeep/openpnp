@@ -19,6 +19,7 @@ import java.util.stream.Stream;
 
 import javax.swing.Icon;
 
+import org.openpnp.machine.reference.axis.ReferenceGridTransformAxis;
 import org.openpnp.machine.reference.axis.ReferenceLinearTransformAxis;
 import org.openpnp.model.AbstractModelObject;
 import org.openpnp.model.LengthUnit;
@@ -159,6 +160,13 @@ public abstract class AbstractMachine extends AbstractModelObject implements Mac
             for (Axis axis : getAxes()) {
                 if (axis instanceof ReferenceLinearTransformAxis 
                         && ((ReferenceLinearTransformAxis)axis).getPrimaryInputAxis() == defaultAxis) {
+                    defaultAxis = (AbstractAxis) axis;
+                    break;
+                }
+            }
+            for (Axis axis : getAxes()) {
+                if (axis instanceof ReferenceGridTransformAxis
+                        && ((ReferenceGridTransformAxis)axis).getPrimaryInputAxis() == defaultAxis) {
                     defaultAxis = (AbstractAxis) axis;
                     break;
                 }

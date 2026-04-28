@@ -10,6 +10,8 @@ import java.util.List;
 import java.util.Map;
 
 import org.apache.commons.io.IOUtils;
+import org.openpnp.machine.reference.camera.ReferenceCamera;
+import org.openpnp.machine.reference.camera.calibration.ReferenceGridCalibration;
 import org.openpnp.machine.reference.vision.ReferenceBottomVision;
 import org.openpnp.machine.reference.vision.ReferenceFiducialLocator;
 import org.openpnp.model.Area;
@@ -72,6 +74,16 @@ public class VisionUtils {
         return getPixelOffsets(camera, offsetX, offsetY);
     }
 
+    private static Location getPixelCenterOffsets(Camera camera, Location cameraLocation, double x, double y) {
+        double imageWidth = camera.getWidth();
+        double imageHeight = camera.getHeight();
+
+        double offsetX = x - (imageWidth / 2);
+        double offsetY = y - (imageHeight / 2);
+
+        return getPixelOffsets(camera, cameraLocation, offsetX, offsetY);
+    }
+
     /**
      * Given pixel offset coordinates, get the same offsets in Camera space and units.
      * 
@@ -81,8 +93,29 @@ public class VisionUtils {
      * @return
      */
     public static Location getPixelOffsets(Camera camera, double offsetX, double offsetY) {
+        Location unitsPerPixel = camera.getUnitsPerPixelAtZ();
+        if (camera instanceof ReferenceCamera) {
+            ReferenceGridCalibration calibration = ((ReferenceCamera) camera).getGridCalibration();
+            if (calibration.isPixelMappingValid()) {
+                return calibration.getPixelOffsets(camera.getLocation(), unitsPerPixel, offsetX, offsetY);
+            }
+        }
+        return getGlobalPixelOffsets(unitsPerPixel, offsetX, offsetY);
+    }
+
+    private static Location getPixelOffsets(Camera camera, Location cameraLocation, double offsetX, double offsetY) {
         // Convert pixels to units
         Location unitsPerPixel = camera.getUnitsPerPixelAtZ();
+        if (camera instanceof ReferenceCamera) {
+            ReferenceGridCalibration calibration = ((ReferenceCamera) camera).getGridCalibration();
+            if (calibration.isPixelMappingValid()) {
+                return calibration.getPixelOffsets(cameraLocation, unitsPerPixel, offsetX, offsetY);
+            }
+        }
+        return getGlobalPixelOffsets(unitsPerPixel, offsetX, offsetY);
+    }
+
+    private static Location getGlobalPixelOffsets(Location unitsPerPixel, double offsetX, double offsetY) {
         offsetX *= unitsPerPixel.getX();
         offsetY *= unitsPerPixel.getY();
         // Convert to right-handed.
@@ -101,7 +134,8 @@ public class VisionUtils {
      * @return
      */
     public static Location getPixelLocation(Camera camera, double x, double y) {
-        return camera.getLocation().add(getPixelCenterOffsets(camera, x, y));
+        Location cameraLocation = camera.getLocation();
+        return cameraLocation.add(getPixelCenterOffsets(camera, cameraLocation, x, y));
     }
 
     /**
@@ -114,7 +148,8 @@ public class VisionUtils {
      * @return
      */
     public static Location getPixelLocation(Camera camera, HeadMountable tool, double x, double y) {
-        return camera.getLocation(tool).add(getPixelCenterOffsets(camera, x, y));
+        Location cameraLocation = camera.getLocation(tool);
+        return cameraLocation.add(getPixelCenterOffsets(camera, cameraLocation, x, y));
     }
 
     /**
@@ -225,9 +260,16 @@ public class VisionUtils {
     public static Point getLocationPixelCenterOffsets(Camera camera, HeadMountable tool, Location location) {
         // get the units per pixel scale 
         Location unitsPerPixel = camera.getUnitsPerPixelAtZ();
+        Location cameraLocation = camera.getLocation(tool);
+        if (camera instanceof ReferenceCamera) {
+            ReferenceGridCalibration calibration = ((ReferenceCamera) camera).getGridCalibration();
+            if (calibration.isPixelMappingValid()) {
+                return calibration.getLocationPixels(cameraLocation, location, unitsPerPixel);
+            }
+        }
         // convert inputs to the same units, center on camera and scale
         location = location.convertToUnits(unitsPerPixel.getUnits())
-                .subtract(camera.getLocation(tool))
+                .subtract(cameraLocation)
                 .multiply(1./unitsPerPixel.getX(), -1./unitsPerPixel.getY(), 0., 0.);
         // relative center of camera in pixels
         return new Point(location.getX(), location.getY());

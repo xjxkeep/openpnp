@@ -45,6 +45,7 @@ import org.openpnp.machine.reference.actuator.ThermistorToLinearSensorActuator;
 import org.openpnp.machine.reference.axis.ReferenceCamClockwiseAxis;
 import org.openpnp.machine.reference.axis.ReferenceCamCounterClockwiseAxis;
 import org.openpnp.machine.reference.axis.ReferenceControllerAxis;
+import org.openpnp.machine.reference.axis.ReferenceGridTransformAxis;
 import org.openpnp.machine.reference.axis.ReferenceLinearTransformAxis;
 import org.openpnp.machine.reference.axis.ReferenceMappedAxis;
 import org.openpnp.machine.reference.axis.ReferenceVirtualAxis;
@@ -427,6 +428,7 @@ public class ReferenceMachine extends AbstractMachine {
         l.add(ReferenceCamCounterClockwiseAxis.class);
         l.add(ReferenceCamClockwiseAxis.class);
         l.add(ReferenceLinearTransformAxis.class);
+        l.add(ReferenceGridTransformAxis.class);
         return l;
     }
 

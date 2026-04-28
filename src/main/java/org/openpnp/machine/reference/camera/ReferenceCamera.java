@@ -51,6 +51,7 @@ import org.openpnp.gui.wizards.CameraVisionConfigurationWizard;
 import org.openpnp.machine.reference.ReferenceNozzleTipCalibration;
 import org.openpnp.machine.reference.camera.calibration.AdvancedCalibration;
 import org.openpnp.machine.reference.camera.calibration.LensCalibrationParams;
+import org.openpnp.machine.reference.camera.calibration.ReferenceGridCalibration;
 import org.openpnp.machine.reference.camera.wizards.ReferenceCameraWhiteBalanceConfigurationWizard;
 import org.openpnp.machine.reference.solutions.CameraSolutions;
 import org.openpnp.machine.reference.wizards.ReferenceCameraCalibrationConfigurationWizard;
@@ -150,6 +151,9 @@ public abstract class ReferenceCamera extends AbstractBroadcastingCamera impleme
     @Element(required = false)
     private AdvancedCalibration advancedCalibration = new AdvancedCalibration();
 
+    @Element(required = false)
+    private ReferenceGridCalibration gridCalibration = new ReferenceGridCalibration();
+
     @Attribute(required = false)
     private String lightActuatorId; 
     @Attribute(required = false)
@@ -212,6 +216,19 @@ public abstract class ReferenceCamera extends AbstractBroadcastingCamera impleme
                 }
             }
         });
+    }
+
+    public ReferenceGridCalibration getGridCalibration() {
+        if (gridCalibration == null) {
+            gridCalibration = new ReferenceGridCalibration();
+        }
+        return gridCalibration;
+    }
+
+    public void setGridCalibration(ReferenceGridCalibration gridCalibration) {
+        Object oldValue = this.gridCalibration;
+        this.gridCalibration = gridCalibration;
+        firePropertyChange("gridCalibration", oldValue, gridCalibration);
     }
     
     /**

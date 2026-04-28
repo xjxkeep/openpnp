@@ -22,22 +22,32 @@
 package org.openpnp.machine.reference.solutions;
 
 import java.awt.Color;
+import java.awt.event.ActionEvent;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.List;
+import java.util.Locale;
+
+import javax.swing.AbstractAction;
+import javax.swing.Action;
 
 import org.opencv.core.Size;
 import org.openpnp.gui.MainFrame;
 import org.openpnp.gui.components.CameraView;
 import org.openpnp.gui.processes.CalibrateCameraProcess;
+import org.openpnp.gui.support.Icons;
 import org.openpnp.gui.support.LengthConverter;
 import org.openpnp.machine.reference.ReferenceHead;
 import org.openpnp.machine.reference.ReferenceMachine;
 import org.openpnp.machine.reference.ReferenceNozzle;
 import org.openpnp.machine.reference.axis.ReferenceControllerAxis;
 import org.openpnp.machine.reference.axis.ReferenceControllerAxis.BacklashCompensationMethod;
+import org.openpnp.machine.reference.axis.ReferenceGridTransformAxis;
 import org.openpnp.machine.reference.camera.ImageCamera;
 import org.openpnp.machine.reference.camera.ReferenceCamera;
 import org.openpnp.machine.reference.camera.calibration.AdvancedCalibration;
+import org.openpnp.machine.reference.camera.calibration.ReferenceGridCalibration;
+import org.openpnp.machine.reference.camera.calibration.ReferenceGridCalibration.PixelTransform;
 import org.openpnp.machine.reference.feeder.ReferenceTubeFeeder;
 import org.openpnp.model.AxesLocation;
 import org.openpnp.model.Configuration;
@@ -49,6 +59,7 @@ import org.openpnp.model.Part;
 import org.openpnp.model.Solutions;
 import org.openpnp.model.Solutions.Milestone;
 import org.openpnp.model.Solutions.State;
+import org.openpnp.spi.Axis;
 import org.openpnp.spi.Axis.Type;
 import org.openpnp.spi.Camera;
 import org.openpnp.spi.CoordinateAxis;
@@ -57,6 +68,8 @@ import org.openpnp.spi.HeadMountable;
 import org.openpnp.spi.MotionPlanner.CompletionType;
 import org.openpnp.spi.Nozzle;
 import org.openpnp.spi.base.AbstractHead.VisualHomingMethod;
+import org.openpnp.spi.base.AbstractHeadMountable;
+import org.openpnp.spi.base.AbstractAxis;
 import org.openpnp.util.MovableUtils;
 import org.openpnp.util.NanosecondTime;
 import org.openpnp.util.SimpleGraph;
@@ -71,6 +84,7 @@ import org.simpleframework.xml.Element;
  * This helper class implements the Issues & Solutions for the Calibration Milestone. 
  */
 public class CalibrationSolutions implements Solutions.Subject {
+    private static final String GRID_LOG_PREFIX = "[CircleGridCalibration]";
 
     @Attribute(required = false)
     private int backlashCalibrationPasses = 4;
@@ -190,6 +204,224 @@ public class CalibrationSolutions implements Solutions.Subject {
         if (visionSolutions.isSolvedPrimaryXY(head)) {
             // Calibrate backlash.
             if (camera == defaultCamera) {
+                final ReferenceGridCalibration gridCalibration = camera.getGridCalibration();
+                solutions.add(visionSolutions.new VisionFeatureIssue(
+                        camera,
+                        camera,
+                        gridCalibration.getCircleDiameter(),
+                        "Circle grid non-linear coordinate and pixel calibration.",
+                        "Scan a printed circle grid with the down-looking camera and build local pixel/mm and XY compensation maps.",
+                        Solutions.Severity.Suggestion,
+                        "https://github.com/openpnp/openpnp/wiki/Calibration-Solutions") {
+
+                    @Override
+                    public void activate() throws Exception {
+                        super.activate();
+                        MainFrame.get().getMachineControls().setSelectedTool(camera);
+                    }
+
+                    @Override
+                    public boolean isForcedUnsolved() {
+                        return !gridCalibration.isMotionMappingValid();
+                    }
+
+                    @Override
+                    public boolean canBeAccepted() {
+                        return gridCalibration.areCornersComplete()
+                                && camera.getUnitsPerPixelAtZ().getX() > 0
+                                && camera.getUnitsPerPixelAtZ().getY() > 0;
+                    }
+
+                    @Override
+                    public Solutions.Issue.Choice[] getChoices() {
+                        return new Solutions.Issue.Choice[] {};
+                    }
+
+                    @Override
+                    public String getExtendedDescription() {
+                        String nextCorner = gridCalibration.getNextCornerIndex() < 0
+                                ? "四个边界圆点已记录，可以点击 Accept 开始蛇形扫描。"
+                                : "请 jog 到" + gridCalibration.getCornerName(gridCalibration.getNextCornerIndex())
+                                        + "外圈圆点，使圆点靠近视野中心，然后点击识别并记录。";
+                        return "<html>"
+                                + "<p>This solution calibrates a non-linear circle grid map for "
+                                + camera.getName() + ".</p><br/>"
+                                + "<p><strong>Corner order:</strong> 左上 → 右上 → 右下 → 左下. "
+                                + nextCorner + "</p><br/>"
+                                + "<p>Use the physical circle diameter and pitch printed on the calibration board. "
+                                + "The dot centers at the four outer corners define the calibration boundary.</p><br/>"
+                                + "<p><strong color=\"red\">CAUTION</strong>: Accept starts an automatic snake scan over "
+                                + "the captured area. Make sure the calibration board is fixed and the whole area is clear.</p>"
+                                + (gridCalibration.getRows() > 0 && gridCalibration.getColumns() > 0
+                                        ? "<br/><h4>Grid:</h4><table>"
+                                                + "<tr><td align=\"right\">Rows:</td><td>" + gridCalibration.getRows() + "</td></tr>"
+                                                + "<tr><td align=\"right\">Columns:</td><td>" + gridCalibration.getColumns() + "</td></tr>"
+                                                + "<tr><td align=\"right\">Corner residual:</td><td>"
+                                                + String.format("%.4f mm", gridCalibration.getMaxCornerResidualMm()) + "</td></tr>"
+                                                + "<tr><td align=\"right\">RMS correction:</td><td>"
+                                                + String.format("%.4f mm", gridCalibration.getRmsErrorMm()) + "</td></tr>"
+                                                + "<tr><td align=\"right\">Max correction:</td><td>"
+                                                + String.format("%.4f mm", gridCalibration.getMaxErrorMm()) + "</td></tr>"
+                                                + "<tr><td align=\"right\">Enabled:</td><td>" + gridCalibration.isEnabled() + "</td></tr>"
+                                                + "</table>"
+                                        : "")
+                                + "</html>";
+                    }
+
+                    @Override
+                    public Solutions.Issue.CustomProperty[] getProperties() {
+                        Solutions.Issue.CustomProperty[] base = super.getProperties();
+                        Solutions.Issue.CustomProperty[] properties = new Solutions.Issue.CustomProperty[base.length + 5];
+                        System.arraycopy(base, 0, properties, 0, base.length);
+                        properties[base.length] = new Solutions.Issue.LengthProperty(
+                                "Circle diameter",
+                                "Set the physical printed circle diameter.") {
+                            @Override
+                            public Length get() {
+                                return gridCalibration.getCircleDiameter();
+                            }
+
+                            @Override
+                            public void set(Length value) throws Exception {
+                                gridCalibration.setCircleDiameter(value);
+                                Logger.info("{} camera={} circleDiameter={}",
+                                        GRID_LOG_PREFIX, camera.getName(), formatLength(value));
+                                if (camera.getUnitsPerPixelAtZ().getX() > 0 && value != null) {
+                                    featureDiameter = (int) Math.round(value.divide(camera.getUnitsPerPixelAtZ().getLengthX()));
+                                    Logger.info("{} camera={} featureDiameterPx={} from circleDiameter={} unitsPerPixel={}",
+                                            GRID_LOG_PREFIX, camera.getName(), featureDiameter,
+                                            formatLength(value), formatLocation(camera.getUnitsPerPixelAtZ()));
+                                }
+                            }
+                        };
+                        properties[base.length + 1] = new Solutions.Issue.LengthProperty(
+                                "Circle pitch",
+                                "Set the physical center-to-center spacing between adjacent dots.") {
+                            @Override
+                            public Length get() {
+                                return gridCalibration.getPitch();
+                            }
+
+                            @Override
+                            public void set(Length value) throws Exception {
+                                gridCalibration.setPitch(value);
+                                Logger.info("{} camera={} circlePitch={}",
+                                        GRID_LOG_PREFIX, camera.getName(), formatLength(value));
+                                if (gridCalibration.areCornersComplete()) {
+                                    gridCalibration.inferGrid();
+                                }
+                            }
+                        };
+                        properties[base.length + 2] = new Solutions.Issue.LengthProperty(
+                                "Probe step",
+                                "Set the short +X/+Y move used to measure the local pixel/mm matrix at each dot.") {
+                            @Override
+                            public Length get() {
+                                return gridCalibration.getProbeStep();
+                            }
+
+                            @Override
+                            public void set(Length value) throws Exception {
+                                gridCalibration.setProbeStep(value);
+                                Logger.info("{} camera={} probeStep={}",
+                                        GRID_LOG_PREFIX, camera.getName(), formatLength(value));
+                            }
+                        };
+                        properties[base.length + 3] = new Solutions.Issue.ActionProperty(
+                                "",
+                                "Capture the next boundary dot center in the order left-top, right-top, right-bottom, left-bottom.") {
+                            @Override
+                            public Action get() {
+                                int next = gridCalibration.getNextCornerIndex();
+                                String cornerName = next < 0 ? "All Corners Captured" :
+                                        "Capture " + gridCalibration.getCornerName(next) + " Corner";
+                                AbstractAction action = new AbstractAction(cornerName, Icons.centerTool) {
+                                    @Override
+                                    public void actionPerformed(ActionEvent e) {
+                                        int cornerIndex = gridCalibration.getNextCornerIndex();
+                                        if (cornerIndex < 0) {
+                                            return;
+                                        }
+                                        UiUtils.submitUiMachineTask(
+                                                () -> {
+                                                    captureGridCorner(camera, gridCalibration, cornerIndex, featureDiameter);
+                                                    return true;
+                                                },
+                                                (result) -> MainFrame.get().getIssuesAndSolutionsTab().solutionChanged(),
+                                                (t) -> UiUtils.showError(t));
+                                    }
+                                };
+                                action.setEnabled(next >= 0);
+                                return action;
+                            }
+                        };
+                        properties[base.length + 4] = new Solutions.Issue.ActionProperty(
+                                "",
+                                "Clear all captured circle-grid corners and scanned grid data.") {
+                            @Override
+                            public Action get() {
+                                return new AbstractAction("Reset Corners", Icons.delete) {
+                                    @Override
+                                    public void actionPerformed(ActionEvent e) {
+                                        Logger.info("{} reset corners requested camera={}",
+                                                GRID_LOG_PREFIX, camera.getName());
+                                        gridCalibration.clearCorners();
+                                        MainFrame.get().getIssuesAndSolutionsTab().solutionChanged();
+                                    }
+                                };
+                            }
+                        };
+                        return properties;
+                    }
+
+                    @Override
+                    public void setState(Solutions.State state) throws Exception {
+                        if (state == State.Solved) {
+                            Logger.info("{} accept requested camera={} circleDiameter={} pitch={} probeStep={} featureDiameterPx={} cornersComplete={}",
+                                    GRID_LOG_PREFIX, camera.getName(),
+                                    formatLength(gridCalibration.getCircleDiameter()),
+                                    formatLength(gridCalibration.getPitch()),
+                                    formatLength(gridCalibration.getProbeStep()),
+                                    featureDiameter, gridCalibration.areCornersComplete());
+                            if (!gridCalibration.areCornersComplete()) {
+                                throw new Exception("Please capture all four outer corner dot centers first.");
+                            }
+                            final State oldState = getState();
+                            UiUtils.submitUiMachineTask(
+                                    () -> {
+                                        calibrateCircleGrid(camera, gridCalibration, featureDiameter);
+                                        ensureGridTransformAxes(head, camera);
+                                        return true;
+                                    },
+                                    (result) -> {
+                                        Logger.info("{} accept completed camera={} enabled={} rows={} columns={} rms={}mm max={}mm",
+                                                GRID_LOG_PREFIX, camera.getName(), gridCalibration.isEnabled(),
+                                                gridCalibration.getRows(), gridCalibration.getColumns(),
+                                                formatDouble(gridCalibration.getRmsErrorMm()),
+                                                formatDouble(gridCalibration.getMaxErrorMm()));
+                                        UiUtils.messageBoxOnException(() -> super.setState(state));
+                                        solutions.setSolutionsIssueSolved(this, true);
+                                    },
+                                    (t) -> {
+                                        Logger.error(t, GRID_LOG_PREFIX + " accept failed camera=" + camera.getName()
+                                                + " enabled=" + gridCalibration.isEnabled()
+                                                + " rows=" + gridCalibration.getRows()
+                                                + " columns=" + gridCalibration.getColumns()
+                                                + " points=" + gridCalibration.getGridPoints().size());
+                                        UiUtils.showError(t);
+                                        UiUtils.messageBoxOnException(() -> setState(oldState));
+                                    });
+                        }
+                        else {
+                            Logger.info("{} issue state changed to {} camera={} disabling mapping but keeping saved data",
+                                    GRID_LOG_PREFIX, state, camera.getName());
+                            gridCalibration.setEnabled(false);
+                            solutions.setSolutionsIssueSolved(this, false);
+                            super.setState(state);
+                        }
+                    }
+                });
+
                 CoordinateAxis rawAxisX = HeadSolutions.getRawAxis(machine, camera.getAxisX());
                 CoordinateAxis rawAxisY = HeadSolutions.getRawAxis(machine, camera.getAxisY());
                 for (CoordinateAxis rawAxis : new CoordinateAxis[] {rawAxisX, rawAxisY}) {
@@ -516,6 +748,358 @@ public class CalibrationSolutions implements Solutions.Subject {
                 }
             });
         }
+    }
+
+    private void captureGridCorner(ReferenceCamera camera, ReferenceGridCalibration calibration,
+            int cornerIndex, int featureDiameter) throws Exception {
+        Logger.info("{} capture corner start camera={} corner={} index={} featureDiameterPx={} cameraLocation={} unitsPerPixel={}",
+                GRID_LOG_PREFIX, camera.getName(), calibration.getCornerName(cornerIndex), cornerIndex,
+                featureDiameter, formatLocation(camera.getLocation()), formatLocation(camera.getUnitsPerPixelAtZ()));
+        try {
+            calibration.setEnabled(false);
+            Circle detected = machine.getVisionSolutions().getSubjectPixelLocation(camera, null,
+                    new Circle(0, 0, featureDiameter), 0.05,
+                    "Grid " + calibration.getCornerName(cornerIndex) + " corner", null, false);
+            Location center = getGlobalPixelLocation(camera, detected.getX(), detected.getY());
+            calibration.setCorner(cornerIndex, center);
+            Logger.info("{} capture corner success camera={} corner={} circle={} center={}",
+                    GRID_LOG_PREFIX, camera.getName(), calibration.getCornerName(cornerIndex),
+                    formatCircle(detected), formatLocation(center));
+            if (calibration.areCornersComplete()) {
+                calibration.inferGrid();
+            }
+        }
+        catch (Exception e) {
+            Logger.error(e, GRID_LOG_PREFIX + " capture corner failed camera=" + camera.getName()
+                    + " corner=" + calibration.getCornerName(cornerIndex)
+                    + " index=" + cornerIndex
+                    + " featureDiameterPx=" + featureDiameter
+                    + " cameraLocation=" + formatLocation(camera.getLocation()));
+            throw e;
+        }
+    }
+
+    private void calibrateCircleGrid(ReferenceCamera camera, ReferenceGridCalibration calibration,
+            int featureDiameter) throws Exception {
+        if (!calibration.areCornersComplete()) {
+            throw new Exception("All four circle-grid corner points must be captured before scanning.");
+        }
+        if (camera.getUnitsPerPixelAtZ().getX() <= 0.0 || camera.getUnitsPerPixelAtZ().getY() <= 0.0) {
+            throw new Exception("Camera " + camera.getName() + " units per pixel must be calibrated first.");
+        }
+        calibration.setEnabled(false);
+        calibration.inferGrid();
+        calibration.clearGridPoints();
+        Logger.info("{} scan start camera={} rows={} columns={} circleDiameter={} pitch={} probeStep={} featureDiameterPx={} unitsPerPixel={} corners=[lt={}, rt={}, rb={}, lb={}]",
+                GRID_LOG_PREFIX, camera.getName(), calibration.getRows(), calibration.getColumns(),
+                formatLength(calibration.getCircleDiameter()), formatLength(calibration.getPitch()),
+                formatLength(calibration.getProbeStep()), featureDiameter,
+                formatLocation(camera.getUnitsPerPixelAtZ()),
+                formatLocation(calibration.getLeftTopCorner()),
+                formatLocation(calibration.getRightTopCorner()),
+                formatLocation(calibration.getRightBottomCorner()),
+                formatLocation(calibration.getLeftBottomCorner()));
+
+        int currentRow = -1;
+        int currentColumn = -1;
+        try {
+            for (int row = 0; row < calibration.getRows(); row++) {
+                boolean reverse = (row % 2) == 1;
+                Logger.info("{} scan row start camera={} row={}/{} direction={}",
+                        GRID_LOG_PREFIX, camera.getName(), row + 1, calibration.getRows(),
+                        reverse ? "right-to-left" : "left-to-right");
+                for (int i = 0; i < calibration.getColumns(); i++) {
+                    int column = reverse ? calibration.getColumns() - 1 - i : i;
+                    currentRow = row;
+                    currentColumn = column;
+                    Location nominal = calibration.getNominalLocation(row, column);
+                    if (nominal == null) {
+                        throw new Exception("Unable to derive nominal grid location at row "
+                                + row + ", column " + column + ".");
+                    }
+                    Logger.info("{} point start camera={} row={} column={} nominal={}",
+                            GRID_LOG_PREFIX, camera.getName(), row, column, formatLocation(nominal));
+                    MovableUtils.moveToLocationAtSafeZ(camera, nominal);
+                    camera.waitForCompletion(CompletionType.WaitForStillstand);
+
+                    Circle detected = detectGridCircle(camera, featureDiameter, 0.05);
+                    Location measured = getGlobalPixelLocation(camera, detected.getX(), detected.getY());
+                    PixelTransform pixelTransform = probeLocalPixelTransform(camera, detected, featureDiameter, calibration);
+                    calibration.setGridPoint(row, column, nominal, measured, pixelTransform);
+                    Logger.info("{} point success camera={} row={} column={} circle={} measured={} correction={} pixelTransform={}",
+                            GRID_LOG_PREFIX, camera.getName(), row, column, formatCircle(detected),
+                            formatLocation(measured),
+                            formatLocation(measured.convertToUnits(LengthUnit.Millimeters)
+                                    .subtract(nominal.convertToUnits(LengthUnit.Millimeters))),
+                            formatPixelTransform(pixelTransform));
+                }
+            }
+            calibration.setEnabled(true);
+            Logger.info("{} scan complete camera={} rows={} columns={} points={} rms={}mm max={}mm pixelMappingValid={} motionMappingValid={}",
+                    GRID_LOG_PREFIX, camera.getName(), calibration.getRows(), calibration.getColumns(),
+                    calibration.getGridPoints().size(), formatDouble(calibration.getRmsErrorMm()),
+                    formatDouble(calibration.getMaxErrorMm()), calibration.isPixelMappingValid(),
+                    calibration.isMotionMappingValid());
+        }
+        catch (Exception e) {
+            calibration.setEnabled(false);
+            Logger.error(e, GRID_LOG_PREFIX + " scan failed camera=" + camera.getName()
+                    + " row=" + currentRow
+                    + " column=" + currentColumn
+                    + " rows=" + calibration.getRows()
+                    + " columns=" + calibration.getColumns()
+                    + " points=" + calibration.getGridPoints().size()
+                    + " mappingEnabled=" + calibration.isEnabled());
+            throw e;
+        }
+    }
+
+    private Circle detectGridCircle(ReferenceCamera camera, int featureDiameter, double extraSearchRange)
+            throws Exception {
+        Exception last = null;
+        double searchRange = extraSearchRange;
+        for (int retry = 0; retry < 3; retry++) {
+            try {
+                Logger.debug("{} detect circle attempt camera={} retry={} searchRange={} featureDiameterPx={} cameraLocation={}",
+                        GRID_LOG_PREFIX, camera.getName(), retry, formatDouble(searchRange), featureDiameter,
+                        formatLocation(camera.getLocation()));
+                Circle detected = machine.getVisionSolutions().getSubjectPixelLocation(camera, null,
+                        new Circle(0, 0, featureDiameter), searchRange,
+                        "Grid scan - retry " + retry, null, retry > 0);
+                Logger.debug("{} detect circle success camera={} retry={} circle={}",
+                        GRID_LOG_PREFIX, camera.getName(), retry, formatCircle(detected));
+                return detected;
+            }
+            catch (Exception e) {
+                last = e;
+                Logger.warn(e, GRID_LOG_PREFIX + " detect circle failed camera=" + camera.getName()
+                        + " retry=" + retry
+                        + " searchRange=" + formatDouble(searchRange)
+                        + " featureDiameterPx=" + featureDiameter
+                        + " cameraLocation=" + formatLocation(camera.getLocation()));
+                searchRange = Math.max(searchRange * 2, 0.10);
+            }
+        }
+        throw last == null ? new Exception("Grid circle not found.") : last;
+    }
+
+    private Circle detectGridCircleNear(ReferenceCamera camera, Circle expected, int featureDiameter)
+            throws Exception {
+        Circle expectedOffset = new Circle(
+                expected.getX() - camera.getWidth() / 2.0,
+                expected.getY() - camera.getHeight() / 2.0,
+                featureDiameter);
+        Exception last = null;
+        double searchRange = 0.05;
+        for (int retry = 0; retry < 3; retry++) {
+            try {
+                Logger.debug("{} detect nearby circle attempt camera={} retry={} expected={} searchRange={} featureDiameterPx={} cameraLocation={}",
+                        GRID_LOG_PREFIX, camera.getName(), retry, formatCircle(expected),
+                        formatDouble(searchRange), featureDiameter, formatLocation(camera.getLocation()));
+                Circle detected = machine.getVisionSolutions().getSubjectPixelLocation(camera, null,
+                        expectedOffset, searchRange, null, null, retry > 0);
+                Logger.debug("{} detect nearby circle success camera={} retry={} circle={}",
+                        GRID_LOG_PREFIX, camera.getName(), retry, formatCircle(detected));
+                return detected;
+            }
+            catch (Exception e) {
+                last = e;
+                Logger.warn(e, GRID_LOG_PREFIX + " detect nearby circle failed camera=" + camera.getName()
+                        + " retry=" + retry
+                        + " expected=" + formatCircle(expected)
+                        + " expectedOffset=" + formatCircle(expectedOffset)
+                        + " searchRange=" + formatDouble(searchRange)
+                        + " featureDiameterPx=" + featureDiameter
+                        + " cameraLocation=" + formatLocation(camera.getLocation()));
+                searchRange = Math.max(searchRange * 2, 0.10);
+            }
+        }
+        throw last == null ? new Exception("Grid circle not found near expected location.") : last;
+    }
+
+    private PixelTransform probeLocalPixelTransform(ReferenceCamera camera, Circle origin,
+            int featureDiameter, ReferenceGridCalibration calibration) throws Exception {
+        Length stepLength = calibration.getProbeStep();
+        if (stepLength == null || stepLength.getValue() == 0) {
+            stepLength = new Length(1, LengthUnit.Millimeters);
+        }
+        double stepMm = Math.abs(stepLength.convertToUnits(LengthUnit.Millimeters).getValue());
+        Location originLocation = camera.getLocation();
+        Logger.debug("{} probe local pixel transform start camera={} originCircle={} originLocation={} step={}mm featureDiameterPx={}",
+                GRID_LOG_PREFIX, camera.getName(), formatCircle(origin), formatLocation(originLocation),
+                formatDouble(stepMm), featureDiameter);
+
+        Location stepXLocation = originLocation.add(new Location(LengthUnit.Millimeters, stepMm, 0, 0, 0));
+        camera.moveTo(stepXLocation);
+        camera.waitForCompletion(CompletionType.WaitForStillstand);
+        Circle movedX = detectGridCircleNear(camera, origin, featureDiameter);
+        Logger.debug("{} probe +X camera={} target={} circle={}",
+                GRID_LOG_PREFIX, camera.getName(), formatLocation(stepXLocation), formatCircle(movedX));
+
+        camera.moveTo(originLocation);
+        camera.waitForCompletion(CompletionType.WaitForStillstand);
+
+        Location stepYLocation = originLocation.add(new Location(LengthUnit.Millimeters, 0, stepMm, 0, 0));
+        camera.moveTo(stepYLocation);
+        camera.waitForCompletion(CompletionType.WaitForStillstand);
+        Circle movedY = detectGridCircleNear(camera, origin, featureDiameter);
+        Logger.debug("{} probe +Y camera={} target={} circle={}",
+                GRID_LOG_PREFIX, camera.getName(), formatLocation(stepYLocation), formatCircle(movedY));
+
+        camera.moveTo(originLocation);
+        camera.waitForCompletion(CompletionType.WaitForStillstand);
+
+        double pxx = movedX.getX() - origin.getX();
+        double pyx = movedX.getY() - origin.getY();
+        double pxy = movedY.getX() - origin.getX();
+        double pyy = movedY.getY() - origin.getY();
+        double determinant = pxx * pyy - pyx * pxy;
+        if (Math.abs(determinant) < 1e-9) {
+            Logger.warn("{} probe determinant too small camera={} determinant={} pxx={} pyx={} pxy={} pyy={} fallbackUnitsPerPixel={}",
+                    GRID_LOG_PREFIX, camera.getName(), formatDouble(determinant),
+                    formatDouble(pxx), formatDouble(pyx), formatDouble(pxy), formatDouble(pyy),
+                    formatLocation(camera.getUnitsPerPixelAtZ()));
+            return PixelTransform.fromUnitsPerPixel(camera.getUnitsPerPixelAtZ());
+        }
+
+        double pixelToMmXx = -stepMm * pyy / determinant;
+        double pixelToMmXy = stepMm * pxy / determinant;
+        double pixelToMmYx = stepMm * pyx / determinant;
+        double pixelToMmYy = -stepMm * pxx / determinant;
+        PixelTransform transform = new PixelTransform(pixelToMmXx, pixelToMmYx, pixelToMmXy, pixelToMmYy);
+        Logger.debug("{} probe local pixel transform success camera={} determinant={} transform={}",
+                GRID_LOG_PREFIX, camera.getName(), formatDouble(determinant), formatPixelTransform(transform));
+        return transform;
+    }
+
+    private Location getGlobalPixelLocation(ReferenceCamera camera, double x, double y) {
+        Location unitsPerPixel = camera.getUnitsPerPixelAtZ();
+        double offsetX = (x - camera.getWidth() / 2.0) * unitsPerPixel.getX();
+        double offsetY = -(y - camera.getHeight() / 2.0) * unitsPerPixel.getY();
+        Location location = camera.getLocation().add(new Location(unitsPerPixel.getUnits(), offsetX, offsetY, 0, 0));
+        Logger.debug("{} global pixel-to-location camera={} pixel=({}, {}) offsets=({}, {}) unitsPerPixel={} location={}",
+                GRID_LOG_PREFIX, camera.getName(), formatDouble(x), formatDouble(y),
+                formatDouble(offsetX), formatDouble(offsetY), formatLocation(unitsPerPixel),
+                formatLocation(location));
+        return location;
+    }
+
+    private void ensureGridTransformAxes(ReferenceHead head, ReferenceCamera camera) throws Exception {
+        ReferenceGridTransformAxis[] existing = findGridTransformAxes(camera);
+        if (existing[Axis.Type.X.ordinal()] != null && existing[Axis.Type.Y.ordinal()] != null) {
+            Logger.info("{} grid transform axes already exist camera={} axisX={} axisY={}",
+                    GRID_LOG_PREFIX, camera.getName(),
+                    existing[Axis.Type.X.ordinal()].getName(),
+                    existing[Axis.Type.Y.ordinal()].getName());
+            return;
+        }
+
+        AbstractAxis oldAxisX = camera.getAxisX();
+        AbstractAxis oldAxisY = camera.getAxisY();
+        if (oldAxisX == null || oldAxisY == null) {
+            Logger.error("{} cannot create grid transform axes camera={} oldAxisX={} oldAxisY={}",
+                    GRID_LOG_PREFIX, camera.getName(),
+                    oldAxisX == null ? "null" : oldAxisX.getName(),
+                    oldAxisY == null ? "null" : oldAxisY.getName());
+            throw new Exception("Camera " + camera.getName() + " must have X and Y axes assigned.");
+        }
+        Logger.info("{} ensuring grid transform axes camera={} oldAxisX={} oldAxisY={}",
+                GRID_LOG_PREFIX, camera.getName(), oldAxisX.getName(), oldAxisY.getName());
+
+        ReferenceGridTransformAxis axisX = existing[Axis.Type.X.ordinal()];
+        if (axisX == null) {
+            axisX = createGridTransformAxis(camera, Axis.Type.X, oldAxisX, oldAxisY);
+        }
+        ReferenceGridTransformAxis axisY = existing[Axis.Type.Y.ordinal()];
+        if (axisY == null) {
+            axisY = createGridTransformAxis(camera, Axis.Type.Y, oldAxisX, oldAxisY);
+        }
+
+        int reassigned = 0;
+        for (Head machineHead : machine.getHeads()) {
+            for (HeadMountable hm : machineHead.getHeadMountables()) {
+                if (hm.getAxis(Axis.Type.X) == oldAxisX && hm.getAxis(Axis.Type.Y) == oldAxisY
+                        && hm instanceof AbstractHeadMountable) {
+                    ((AbstractHeadMountable) hm).setAxis(axisX, Axis.Type.X);
+                    ((AbstractHeadMountable) hm).setAxis(axisY, Axis.Type.Y);
+                    reassigned++;
+                    Logger.info("{} reassigned head mountable camera={} head={} mountable={} axisX={} axisY={}",
+                            GRID_LOG_PREFIX, camera.getName(), machineHead.getName(), hm.getName(),
+                            axisX.getName(), axisY.getName());
+                }
+            }
+        }
+        Logger.info("{} grid transform axes ready camera={} axisX={} axisY={} reassignedMountables={}",
+                GRID_LOG_PREFIX, camera.getName(), axisX.getName(), axisY.getName(), reassigned);
+    }
+
+    private ReferenceGridTransformAxis createGridTransformAxis(ReferenceCamera camera, Axis.Type type,
+            AbstractAxis inputAxisX, AbstractAxis inputAxisY) throws Exception {
+        ReferenceGridTransformAxis axis = new ReferenceGridTransformAxis();
+        axis.setType(type);
+        axis.setName("Grid " + camera.getName() + " " + type.getDefaultLetter());
+        axis.setInputAxisX(inputAxisX);
+        axis.setInputAxisY(inputAxisY);
+        axis.setCalibrationCamera(camera);
+        axis.setCompensation(true);
+        machine.addAxis(axis);
+        Logger.info("{} created grid transform axis camera={} axis={} type={} inputX={} inputY={}",
+                GRID_LOG_PREFIX, camera.getName(), axis.getName(), type,
+                inputAxisX.getName(), inputAxisY.getName());
+        return axis;
+    }
+
+    private ReferenceGridTransformAxis[] findGridTransformAxes(ReferenceCamera camera) {
+        ReferenceGridTransformAxis[] axes = new ReferenceGridTransformAxis[Axis.Type.values().length];
+        for (Axis axis : machine.getAxes()) {
+            if (axis instanceof ReferenceGridTransformAxis
+                    && ((ReferenceGridTransformAxis) axis).getCalibrationCamera() == camera) {
+                axes[axis.getType().ordinal()] = (ReferenceGridTransformAxis) axis;
+            }
+        }
+        Logger.debug("{} find grid transform axes camera={} axisX={} axisY={}",
+                GRID_LOG_PREFIX, camera.getName(),
+                axes[Axis.Type.X.ordinal()] == null ? "null" : axes[Axis.Type.X.ordinal()].getName(),
+                axes[Axis.Type.Y.ordinal()] == null ? "null" : axes[Axis.Type.Y.ordinal()].getName());
+        return axes;
+    }
+
+    private static String formatLength(Length length) {
+        if (length == null) {
+            return "null";
+        }
+        Length mm = length.convertToUnits(LengthUnit.Millimeters);
+        return String.format(Locale.US, "%.6f mm", mm.getValue());
+    }
+
+    private static String formatDouble(double value) {
+        return String.format(Locale.US, "%.6f", value);
+    }
+
+    private static String formatLocation(Location location) {
+        if (location == null) {
+            return "null";
+        }
+        Location mm = location.convertToUnits(LengthUnit.Millimeters);
+        return String.format(Locale.US, "(x=%.6f,y=%.6f,z=%.6f,r=%.6f)",
+                mm.getX(), mm.getY(), mm.getZ(), mm.getRotation());
+    }
+
+    private static String formatCircle(Circle circle) {
+        if (circle == null) {
+            return "null";
+        }
+        return String.format(Locale.US, "(x=%.3f,y=%.3f,d=%.3f)",
+                circle.getX(), circle.getY(), circle.getDiameter());
+    }
+
+    private static String formatPixelTransform(PixelTransform transform) {
+        if (transform == null) {
+            return "null";
+        }
+        return String.format(Locale.US, "[[%.9f,%.9f],[%.9f,%.9f]]",
+                transform.getPixelToMmXx(), transform.getPixelToMmXy(),
+                transform.getPixelToMmYx(), transform.getPixelToMmYy());
     }
 
     public void calibrateAxisBacklash(ReferenceHead head, ReferenceCamera camera,
