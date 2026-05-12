@@ -1,4 +1,5 @@
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.awt.image.BufferedImage;
 import java.io.File;
@@ -22,6 +23,7 @@ import org.openpnp.spi.Camera;
 import org.openpnp.spi.FocusProvider;
 import org.openpnp.spi.Head;
 import org.openpnp.spi.HeadMountable;
+import org.openpnp.spi.Locatable.LocationOption;
 import org.openpnp.spi.PropertySheetHolder;
 import org.openpnp.spi.VisionProvider;
 import org.openpnp.spi.base.AbstractHeadMountable;
@@ -67,9 +69,57 @@ public class VisionUtilsTest {
         Double pixelArea = VisionUtils.toPixels(new Area(13.2, AreaUnit.SquareCentimeters), camera);
         assertEquals(1320.0, pixelArea);
     }
+
+    @Test
+    public void testLocationPixelsWithExplicitCameraLocation() {
+        TestCamera camera = new TestCamera();
+        camera.unitsPerPixel = new Location(LengthUnit.Millimeters, 0.1, 0.1, 0, 0);
+
+        Location cameraLocation = new Location(LengthUnit.Millimeters, 5, 3, 0, 0);
+        Location targetLocation = new Location(LengthUnit.Millimeters, 3, 3, 0, 0);
+        org.openpnp.model.Point pixels = VisionUtils.getLocationPixels(camera, cameraLocation, targetLocation);
+
+        assertEquals(300.0, pixels.getX(), 0.0001);
+        assertEquals(240.0, pixels.getY(), 0.0001);
+    }
+
+    @Test
+    public void testVisibleCameraLocationReturnsReachableTarget() throws Exception {
+        LimitedTestCamera camera = new LimitedTestCamera();
+        Location targetLocation = new Location(LengthUnit.Millimeters, 3, 3, 0, 0);
+        camera.reachableLocation = targetLocation;
+
+        assertEquals(targetLocation, VisionUtils.getVisibleCameraLocation(camera, targetLocation));
+    }
+
+    @Test
+    public void testVisibleCameraLocationUsesSoftLimitedLocation() throws Exception {
+        LimitedTestCamera camera = new LimitedTestCamera();
+        camera.unitsPerPixel = new Location(LengthUnit.Millimeters, 0.1, 0.1, 0, 0);
+        Location targetLocation = new Location(LengthUnit.Millimeters, 3, 3, 0, 0);
+        Location limitedLocation = new Location(LengthUnit.Millimeters, 5, 3, 0, 0);
+        camera.reachableLocation = limitedLocation;
+        camera.approximativeLocation = limitedLocation;
+
+        assertEquals(limitedLocation, VisionUtils.getVisibleCameraLocation(camera, targetLocation));
+    }
+
+    @Test
+    public void testVisibleCameraLocationRejectsTargetsOutsideLimitedView() {
+        LimitedTestCamera camera = new LimitedTestCamera();
+        camera.unitsPerPixel = new Location(LengthUnit.Millimeters, 0.1, 0.1, 0, 0);
+        Location targetLocation = new Location(LengthUnit.Millimeters, 100, 3, 0, 0);
+        Location limitedLocation = new Location(LengthUnit.Millimeters, 5, 3, 0, 0);
+        camera.reachableLocation = limitedLocation;
+        camera.approximativeLocation = limitedLocation;
+
+        assertThrows(Exception.class, () -> VisionUtils.getVisibleCameraLocation(camera, targetLocation));
+    }
     
     static class TestCamera extends AbstractHeadMountable implements Camera {
         protected Head head;
+        protected Location location = new Location(LengthUnit.Millimeters, 0, 0, 0, 0);
+        protected Location unitsPerPixel = new Location(LengthUnit.Millimeters, 1, 1, 0, 0);
 
         @Override
         public String getId() {
@@ -88,7 +138,7 @@ public class VisionUtilsTest {
 
         @Override
         public Location getLocation() {
-            return new Location(LengthUnit.Millimeters, 0, 0, 0, 0);
+            return location;
         }
 
         @Override
@@ -152,7 +202,7 @@ public class VisionUtilsTest {
 
         @Override
         public Location getUnitsPerPixel() {
-            return new Location(LengthUnit.Millimeters, 1, 1, 0, 0);
+            return unitsPerPixel;
         }
 
         @Override
@@ -265,7 +315,7 @@ public class VisionUtilsTest {
         }
 
         public Location getUnitsPerPixel(Length z) {
-            return new Location(LengthUnit.Millimeters, 1, 1, 0, 0).derive(null, null, z.getValue(), null);
+            return unitsPerPixel.derive(null, null, z == null ? unitsPerPixel.getZ() : z.getValue(), null);
         }
 
         @Override
@@ -286,6 +336,22 @@ public class VisionUtilsTest {
         @Override
         public Length getRoamingRadius() {
             return new Length(10, LengthUnit.Millimeters);
+        }
+    }
+
+    static class LimitedTestCamera extends TestCamera {
+        protected Location reachableLocation;
+        protected Location approximativeLocation;
+
+        @Override
+        public boolean isReachable(Location location) throws Exception {
+            return location.equals(reachableLocation);
+        }
+
+        @Override
+        public Location getApproximativeLocation(Location currentLocation, Location desiredLocation,
+                LocationOption... options) throws Exception {
+            return approximativeLocation;
         }
     }
 }

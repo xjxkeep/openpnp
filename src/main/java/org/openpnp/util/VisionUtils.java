@@ -29,6 +29,7 @@ import org.openpnp.model.Point;
 import org.openpnp.model.Footprint.Pad;
 import org.openpnp.spi.Camera;
 import org.openpnp.spi.HeadMountable;
+import org.openpnp.spi.Locatable.LocationOption;
 import org.openpnp.spi.Nozzle;
 import org.openpnp.spi.PartAlignment;
 import org.openpnp.spi.PartAlignment.PartAlignmentOffset;
@@ -43,15 +44,16 @@ import com.google.zxing.common.HybridBinarizer;
 public class VisionUtils {
     final public static String PIPELINE_RESULTS_NAME = "results";
     final public static String PIPELINE_CONTROL_PROPERTY_NAME = "propertyName";
+    final public static double DEFAULT_CAMERA_VIEW_MARGIN = 0.05;
 
     /**
      * Given pixel coordinates within the frame of the Camera's image, get the offsets from Camera
      * center to the coordinates in Camera space and units. The resulting value is the distance the
      * Camera can be moved to be centered over the pixel coordinates.
-     * 
+     *
      * Example: If the x, y coordinates describe a position above and to the left of the center of
      * the camera the offsets will be -,+.
-     * 
+     *
      * If the coordinates position are below and to the right of center the offsets will be +, -.
      * 
      * Calling camera.getLocation().add(getPixelCenterOffsets(...) will give you the location of x,
@@ -140,7 +142,7 @@ public class VisionUtils {
 
     /**
      * Same as getPixelLocation() but including the tool specific calibration offset.
-     *  
+     *
      * @param camera
      * @param tool
      * @param x
@@ -150,6 +152,55 @@ public class VisionUtils {
     public static Location getPixelLocation(Camera camera, HeadMountable tool, double x, double y) {
         Location cameraLocation = camera.getLocation(tool);
         return cameraLocation.add(getPixelCenterOffsets(camera, cameraLocation, x, y));
+    }
+
+    /**
+     * Returns a reachable camera location that still keeps targetLocation visible. If the exact
+     * targetLocation is not reachable, the camera location is clipped through the normal soft limit
+     * approximation and then checked against the camera field of view.
+     *
+     * @param camera
+     * @param targetLocation
+     * @return
+     * @throws Exception
+     */
+    public static Location getVisibleCameraLocation(Camera camera, Location targetLocation) throws Exception {
+        return getVisibleCameraLocation(camera, targetLocation, DEFAULT_CAMERA_VIEW_MARGIN);
+    }
+
+    public static Location getVisibleCameraLocation(Camera camera, Location targetLocation,
+            double marginFraction) throws Exception {
+        Location cameraLocation = targetLocation;
+        if (!camera.isReachable(cameraLocation)) {
+            cameraLocation = camera.getApproximativeLocation(camera.getLocation(), targetLocation,
+                    LocationOption.ApplySoftLimits);
+            if (!camera.isReachable(cameraLocation)) {
+                throw new Exception("Camera cannot reach target location " + targetLocation
+                        + " or a soft-limited view location " + cameraLocation + ".");
+            }
+        }
+        if (!isLocationInsideCameraView(camera, cameraLocation, targetLocation, marginFraction)) {
+            Point pixels = getLocationPixels(camera, cameraLocation, targetLocation);
+            throw new Exception("Target location " + targetLocation
+                    + " is outside the camera view from reachable location " + cameraLocation
+                    + " at pixel " + pixels + " with margin " + marginFraction + ".");
+        }
+        return cameraLocation;
+    }
+
+    public static boolean isLocationInsideCameraView(Camera camera, Location cameraLocation,
+            Location location, double marginFraction) {
+        if (marginFraction < 0 || marginFraction >= 0.5) {
+            throw new IllegalArgumentException("Camera view margin must be >= 0 and < 0.5");
+        }
+        Point pixels = getLocationPixels(camera, cameraLocation, location);
+        double minX = camera.getWidth()*marginFraction;
+        double maxX = camera.getWidth()*(1.0 - marginFraction);
+        double minY = camera.getHeight()*marginFraction;
+        double maxY = camera.getHeight()*(1.0 - marginFraction);
+        return Double.isFinite(pixels.x) && Double.isFinite(pixels.y)
+                && pixels.x >= minX && pixels.x <= maxX
+                && pixels.y >= minY && pixels.y <= maxY;
     }
 
     /**
@@ -214,13 +265,26 @@ public class VisionUtils {
 
     /**
      * Get a location in camera pixels. This is the reverse transformation of getPixelLocation().
-     *  
+     *
      * @param location
      * @param camera
      * @return
      */
     public static Point getLocationPixels(Camera camera, Location location) {
-        return getLocationPixels(camera, null, location);
+        return getLocationPixels(camera, (HeadMountable) null, location);
+    }
+
+    /**
+     * Get a location in camera pixels from a planned or previously known camera location.
+     *
+     * @param camera
+     * @param cameraLocation
+     * @param location
+     * @return
+     */
+    public static Point getLocationPixels(Camera camera, Location cameraLocation, Location location) {
+        Point center = getLocationPixelCenterOffsets(camera, cameraLocation, location);
+        return new Point(center.getX()+camera.getWidth()/2, center.getY()+camera.getHeight()/2);
     }
 
     /**
@@ -245,7 +309,7 @@ public class VisionUtils {
      * @return
      */
     public static Point getLocationPixelCenterOffsets(Camera camera, Location location) {
-        return getLocationPixelCenterOffsets(camera, null, location);
+        return getLocationPixelCenterOffsets(camera, (HeadMountable) null, location);
     }
 
     /**
@@ -272,6 +336,20 @@ public class VisionUtils {
                 .subtract(cameraLocation)
                 .multiply(1./unitsPerPixel.getX(), -1./unitsPerPixel.getY(), 0., 0.);
         // relative center of camera in pixels
+        return new Point(location.getX(), location.getY());
+    }
+
+    public static Point getLocationPixelCenterOffsets(Camera camera, Location cameraLocation, Location location) {
+        Location unitsPerPixel = camera.getUnitsPerPixel(cameraLocation.getLengthZ());
+        if (camera instanceof ReferenceCamera) {
+            ReferenceGridCalibration calibration = ((ReferenceCamera) camera).getGridCalibration();
+            if (calibration.isPixelMappingValid()) {
+                return calibration.getLocationPixels(cameraLocation, location, unitsPerPixel);
+            }
+        }
+        location = location.convertToUnits(unitsPerPixel.getUnits())
+                .subtract(cameraLocation.convertToUnits(unitsPerPixel.getUnits()))
+                .multiply(1./unitsPerPixel.getX(), -1./unitsPerPixel.getY(), 0., 0.);
         return new Point(location.getX(), location.getY());
     }
 

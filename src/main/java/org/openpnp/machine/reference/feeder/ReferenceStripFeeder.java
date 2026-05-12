@@ -345,9 +345,10 @@ public class ReferenceStripFeeder extends ReferenceFeeder {
             expectedLocation = Utils2D.getPointAlongLine(lineLocations[0], lineLocations[1],
                     partPitch.multiply(visionFeedCount - 1));
         }
-        MovableUtils.moveToLocationAtSafeZ(camera, expectedLocation);
+        Location cameraLocation = VisionUtils.getVisibleCameraLocation(camera, expectedLocation);
+        MovableUtils.moveToLocationAtSafeZ(camera, cameraLocation);
         // and look for the hole
-        Location actualLocation = findClosestHole(camera);
+        Location actualLocation = findClosestHole(camera, expectedLocation);
         if (actualLocation == null) {
             throw new Exception("Unable to locate reference hole. End of strip?");
         }
@@ -369,7 +370,7 @@ public class ReferenceStripFeeder extends ReferenceFeeder {
         persistedVisionLocationFeedCount = visionFeedCount;
     }
 
-    private Location findClosestHole(Camera camera) throws Exception {
+    private Location findClosestHole(Camera camera, Location expectedLocation) throws Exception {
         try (CvPipeline pipeline = getPipeline()) {
             Integer pxMinDistance = (int) VisionUtils.toPixels(getHolePitchMin(), camera);
             Integer pxMinDiameter = (int) VisionUtils.toPixels(getHoleDiameterMin(), camera);
@@ -384,6 +385,7 @@ public class ReferenceStripFeeder extends ReferenceFeeder {
             pipeline.setProperty("sprocketHole.diameter", getHoleDiameter());
             // Search range is half-way to the next hole. 
             pipeline.setProperty("sprocketHole.maxDistance", getHolePitch().multiply(0.5));
+            pipeline.setProperty("sprocketHole.center", expectedLocation);
             pipeline.process();
     
             if (MainFrame.get() != null) {
@@ -401,19 +403,22 @@ public class ReferenceStripFeeder extends ReferenceFeeder {
                     .getExpectedListModel(CvStage.Result.Circle.class, 
                             new Exception("Feeder " + getName() + ": No tape holes found."));            
 
-            // Find the closest result
-            results.sort((a, b) -> {
-                Double da = VisionUtils.getPixelLocation(camera, a.x, a.y)
-                        .getLinearDistanceTo(camera.getLocation());
-                Double db = VisionUtils.getPixelLocation(camera, b.x, b.y)
-                        .getLinearDistanceTo(camera.getLocation());
-                return da.compareTo(db);
-            });
-    
-            CvStage.Result.Circle closestResult = results.get(0);
-            Location holeLocation = VisionUtils.getPixelLocation(camera, closestResult.x, closestResult.y);
-            return holeLocation;
+            return getClosestHoleLocation(camera, expectedLocation, results);
         }
+    }
+
+    static Location getClosestHoleLocation(Camera camera, Location expectedLocation,
+            List<CvStage.Result.Circle> results) {
+        results.sort((a, b) -> {
+            Double da = VisionUtils.getPixelLocation(camera, a.x, a.y)
+                    .getLinearDistanceTo(expectedLocation);
+            Double db = VisionUtils.getPixelLocation(camera, b.x, b.y)
+                    .getLinearDistanceTo(expectedLocation);
+            return da.compareTo(db);
+        });
+
+        CvStage.Result.Circle closestResult = results.get(0);
+        return VisionUtils.getPixelLocation(camera, closestResult.x, closestResult.y);
     }
    
     /**
