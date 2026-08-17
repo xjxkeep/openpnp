@@ -4,16 +4,28 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.openpnp.machine.reference.feeder.ReferenceStripFeeder.TapeOrientation;
+import org.openpnp.model.Configuration;
 import org.openpnp.model.LengthUnit;
 import org.openpnp.model.Location;
 import org.openpnp.spi.Camera;
 import org.openpnp.vision.pipeline.CvStage;
 
+import com.google.common.io.Files;
+
 public class ReferenceStripFeederTest {
+    @BeforeEach
+    public void setUp() {
+        File workingDirectory = Files.createTempDir();
+        Configuration.initialize(workingDirectory);
+    }
+
     @Test
     public void closestHoleUsesExpectedLocationInsteadOfCameraCenter() {
         Camera camera = mock(Camera.class);
@@ -31,5 +43,27 @@ public class ReferenceStripFeederTest {
                 expectedLocation, results);
 
         assertEquals(expectedLocation, closestLocation);
+    }
+
+    @Test
+    public void tapeOrientationMirrorsPickLocationAroundReferenceHole() throws Exception {
+        assertPickLocation(TapeOrientation.ReferenceHoleAfterPartRight, -3.5, -2.0);
+        assertPickLocation(TapeOrientation.ReferenceHoleAfterPartLeft, 3.5, -2.0);
+        assertPickLocation(TapeOrientation.ReferenceHoleBeforePartRight, -3.5, 2.0);
+        assertPickLocation(TapeOrientation.ReferenceHoleBeforePartLeft, 3.5, 2.0);
+    }
+
+    private static void assertPickLocation(TapeOrientation tapeOrientation, double x, double y)
+            throws Exception {
+        ReferenceStripFeeder feeder = new ReferenceStripFeeder();
+        feeder.setReferenceHoleLocation(new Location(LengthUnit.Millimeters, 0, 0, 0, 0));
+        feeder.setLastHoleLocation(new Location(LengthUnit.Millimeters, 0, 4, 0, 0));
+        feeder.setTapeOrientation(tapeOrientation);
+        feeder.setFeedCount(1);
+
+        Location pickLocation = feeder.getPickLocation();
+
+        assertEquals(x, pickLocation.getX(), 0.0001);
+        assertEquals(y, pickLocation.getY(), 0.0001);
     }
 }

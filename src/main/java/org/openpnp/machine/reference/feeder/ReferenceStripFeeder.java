@@ -91,6 +91,39 @@ public class ReferenceStripFeeder extends ReferenceFeeder {
         }
     }
 
+    public enum TapeOrientation {
+        ReferenceHoleAfterPartRight("Hole After Part / Right Side", 1, 1),
+        ReferenceHoleAfterPartLeft("Hole After Part / Left Side", -1, 1),
+        ReferenceHoleBeforePartRight("Hole Before Part / Right Side", 1, -1),
+        ReferenceHoleBeforePartLeft("Hole Before Part / Left Side", -1, -1);
+
+        private String name;
+        private int lateralMultiplier;
+        private int linearMultiplier;
+
+        TapeOrientation(String name, int lateralMultiplier, int linearMultiplier) {
+            this.name = name;
+            this.lateralMultiplier = lateralMultiplier;
+            this.linearMultiplier = linearMultiplier;
+        }
+
+        public int getLateralMultiplier() {
+            return lateralMultiplier;
+        }
+
+        public int getLinearMultiplier() {
+            return linearMultiplier;
+        }
+
+        public boolean isExpectedHoleSide(double distance) {
+            return lateralMultiplier > 0 ? distance > 0.0 : distance < 0.0;
+        }
+
+        public String toString() {
+            return name;
+        }
+    }
+
     @Element(required = false)
     private Location referenceHoleLocation = new Location(LengthUnit.Millimeters);
 
@@ -105,6 +138,9 @@ public class ReferenceStripFeeder extends ReferenceFeeder {
 
     @Attribute(required = false)
     private TapeType tapeType = TapeType.WhitePaper;
+
+    @Attribute(required = false)
+    private TapeOrientation tapeOrientation = TapeOrientation.ReferenceHoleAfterPartRight;
 
     @Attribute(required = false)
     private Boolean standardEia481 = null;
@@ -238,7 +274,10 @@ public class ReferenceStripFeeder extends ReferenceFeeder {
         // to the part in the tape
         Length x = getHoleToPartLateral().convertToUnits(l.getUnits());
         Length y = referenceHoleToPartLinear.convertToUnits(l.getUnits());
-        Point p = new Point(x.getValue(), y.getValue());
+        TapeOrientation tapeOrientation = getTapeOrientation();
+        Point p = new Point(
+                x.getValue() * tapeOrientation.getLateralMultiplier(),
+                y.getValue() * tapeOrientation.getLinearMultiplier());
 
         // Determine the angle that the tape is at. For historical reasons, our local coordinates are
         // rotated -90° (vertical tape with sprocket holes left). 
@@ -480,6 +519,20 @@ public class ReferenceStripFeeder extends ReferenceFeeder {
 
     public void setTapeType(TapeType tapeType) {
         this.tapeType = tapeType;
+    }
+
+    public TapeOrientation getTapeOrientation() {
+        if (tapeOrientation == null) {
+            tapeOrientation = TapeOrientation.ReferenceHoleAfterPartRight;
+        }
+        return tapeOrientation;
+    }
+
+    public void setTapeOrientation(TapeOrientation tapeOrientation) {
+        Object oldValue = this.tapeOrientation;
+        this.tapeOrientation = tapeOrientation;
+        resetVisionCache();
+        firePropertyChange("tapeOrientation", oldValue, tapeOrientation);
     }
 
     public Location getReferenceHoleLocation() {

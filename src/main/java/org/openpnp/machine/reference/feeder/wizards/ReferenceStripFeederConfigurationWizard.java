@@ -70,6 +70,7 @@ import org.openpnp.gui.support.SearchablePartsComboBoxModel;
 import org.openpnp.machine.reference.camera.BufferedImageCamera;
 import org.openpnp.machine.reference.feeder.ReferenceStripFeeder;
 import org.openpnp.machine.reference.feeder.ReferenceStripFeeder.TapeType;
+import org.openpnp.machine.reference.feeder.ReferenceStripFeeder.TapeOrientation;
 import org.openpnp.model.Board;
 import org.openpnp.model.Configuration;
 import org.openpnp.model.Length;
@@ -128,6 +129,8 @@ public class ReferenceStripFeederConfigurationWizard extends AbstractConfigurati
     private JTextField textFieldMaxFeedCount;
     private JLabel lblTapeType;
     private JComboBox comboBoxTapeType;
+    private JLabel lblTapeOrientation;
+    private JComboBox comboBoxTapeOrientation;
     private JLabel lblRotationInTape;
     private JTextField textFieldLocationRotation;
     private JButton btnAutoSetup;
@@ -402,6 +405,17 @@ public class ReferenceStripFeederConfigurationWizard extends AbstractConfigurati
         btnMaxFeedCount.setToolTipText(Translations.getString(
                 "ReferenceStripFeederConfigurationWizard.AutoSetMaxFeedCountButton.toolTipText")); //$NON-NLS-1$
         panelTapeSettings.add(btnMaxFeedCount,"12,8");
+
+        lblTapeOrientation = new JLabel(Translations.getString(
+                "ReferenceStripFeederConfigurationWizard.TapeOrientationLabel.text")); //$NON-NLS-1$
+        lblTapeOrientation.setToolTipText(Translations.getString(
+                "ReferenceStripFeederConfigurationWizard.TapeOrientationLabel.toolTipText")); //$NON-NLS-1$
+        panelTapeSettings.add(lblTapeOrientation, "2, 10, right, default");
+
+        comboBoxTapeOrientation = new JComboBox(TapeOrientation.values());
+        comboBoxTapeOrientation.setToolTipText(Translations.getString(
+                "ReferenceStripFeederConfigurationWizard.TapeOrientationLabel.toolTipText")); //$NON-NLS-1$
+        panelTapeSettings.add(comboBoxTapeOrientation, "4, 10, 9, 1, fill, default");
         
         JPanel panelVision = new JPanel();
         panelVision.setBorder(new TitledBorder(null, Translations.getString(
@@ -538,6 +552,7 @@ public class ReferenceStripFeederConfigurationWizard extends AbstractConfigurati
         addWrappedBinding(feeder, "feedRetryCount", retryCountTf, "text", intConverter);
         addWrappedBinding(feeder, "pickRetryCount", pickRetryCount, "text", intConverter);
         addWrappedBinding(feeder, "tapeType", comboBoxTapeType, "selectedItem");
+        addWrappedBinding(feeder, "tapeOrientation", comboBoxTapeOrientation, "selectedItem");
 
         addWrappedBinding(feeder, "tapeWidth", textFieldTapeWidth, "text", lengthConverter);
         addWrappedBinding(feeder, "partPitch", textFieldPartPitch, "text", lengthConverter);
@@ -1081,7 +1096,9 @@ public class ReferenceStripFeederConfigurationWizard extends AbstractConfigurati
         List<Location> part2SortedLocations = new ArrayList<>(part2HoleLocationsAlongRay.size());
         part2HoleLocationsAlongRay.forEach(locationAlongRay -> part2SortedLocations.add(locationAlongRay.location));
         List<Location> part2ReverseSortedLocations = Lists.reverse(part2SortedLocations);
-        Location part2ReferenceHole = part2ReverseSortedLocations.get(0);
+        Location part2ReferenceHole = feeder.getTapeOrientation().getLinearMultiplier() > 0
+                ? part2ReverseSortedLocations.get(0)
+                : part2SortedLocations.get(0);
 
         // Part 1's reference hole is the one closest to part 2's reference hole.
         List<Location> part1SortedLocations = VisionUtils.sortLocationsByDistance(part2ReferenceHole, part1HoleLocations);
@@ -1103,7 +1120,8 @@ public class ReferenceStripFeederConfigurationWizard extends AbstractConfigurati
         Point h2 = new Point(hole2RelativeLocation.getX(), hole2RelativeLocation.getY());
         double h1Dist = expectedHoleHalfspace.dot(h1);
         double h2Dist = expectedHoleHalfspace.dot(h2);
-        boolean correctOrientation = (h1Dist > 0.0) && (h2Dist > 0.0);
+        boolean correctOrientation = feeder.getTapeOrientation().isExpectedHoleSide(h1Dist)
+                && feeder.getTapeOrientation().isExpectedHoleSide(h2Dist);
 
         if (this.logDebugInfo) {
             Logger.info("deriveReferenceHoles");
@@ -1118,11 +1136,12 @@ public class ReferenceStripFeederConfigurationWizard extends AbstractConfigurati
             Logger.info("  referenceHoleDistance: " + referenceHoleDistance);
             Logger.info("  h1Dist: " + h1Dist);
             Logger.info("  h2Dist: " + h2Dist);
+            Logger.info("  tapeOrientation: " + feeder.getTapeOrientation());
             Logger.info("  correctOrientation: " + correctOrientation);
         }
 
         if (!correctOrientation) {
-            throw new Exception("The tape is oriented incorrectly for the feed direction of the components selected");
+            throw new Exception("The tape holes are on the wrong side for the selected tape orientation");
         }
 
         List<Location> referenceHoles = new ArrayList<>();
